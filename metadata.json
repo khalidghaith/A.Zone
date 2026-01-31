@@ -1,0 +1,5 @@
+{
+  "name": "A.Zone",
+  "description": "An AI-powered architectural programming and zoning assistant. It analyzes functional requirements, generates area diagrams, and provides an interactive bubble diagramming tool with constant-area constraints and multi-floor support.",
+  "requestFramePermissions": []
+}

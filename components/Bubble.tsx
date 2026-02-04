@@ -1,686 +1,529 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Room, ZONE_COLORS, Point, DiagramStyle } from '../types';
-import { Sun, Link as LinkIcon, Pencil, X, Ban, LandPlot, ArrowUpFromLine, ArrowDownToLine } from 'lucide-react';
+import { Room, ZONE_COLORS, Point, DiagramStyle, FLOORS } from '../types';
+import { Pencil, X, LandPlot, Link as LinkIcon, ArrowUpFromLine, ArrowDownToLine, Box } from 'lucide-react';
+import { createRoundedPath } from '../utils/geometry';
 
 interface BubbleProps {
-  room: Room;
-  pixelsPerMeter: number;
-  zoomScale: number; 
-  updateRoom: (id: string, updates: Partial<Room>) => void;
-  onFloorChange: (id: string, delta: number) => void;
-  isSelected: boolean;
-  onSelect: (id: string, multi: boolean) => void;
-  is3D: boolean;
-  showSunWarning: boolean;
-  onConnectionStart: (id: string) => void;
-  isConnecting: boolean;
-  snapEnabled: boolean;
-  snapPixelUnit: number;
-  unitSystem: 'metric' | 'imperial';
-  isConnectionSource?: boolean;
-  otherRooms: Room[]; 
-  diagramStyle: DiagramStyle;
+    room: Room;
+    zoomScale: number;
+    updateRoom: (id: string, updates: Partial<Room>) => void;
+    isSelected: boolean;
+    onSelect: (id: string, multi: boolean) => void;
+    diagramStyle: DiagramStyle;
+    snapEnabled: boolean;
+    snapPixelUnit: number;
+    getSnappedPosition?: (room: Room, excludeId: string) => { x: number, y: number };
+    onLinkToggle?: (id: string) => void;
+    isLinkingSource?: boolean;
 }
 
-// Shoelace formula for area
-const calculatePolygonArea = (points: Point[], pixelsPerMeter: number): number => {
+// area utility
+const calculatePolygonArea = (points: Point[]): number => {
     let area = 0;
     for (let i = 0; i < points.length; i++) {
         const j = (i + 1) % points.length;
         area += points[i].x * points[j].y;
         area -= points[j].x * points[i].y;
     }
-    const areaPx = Math.abs(area) / 2;
-    return areaPx / (pixelsPerMeter * pixelsPerMeter);
+    return Math.abs(area) / 2;
 };
 
-// Helper to create rounded path (Fillets)
-const createRoundedPath = (points: Point[], radius: number) => {
-  if (points.length < 3) return `M ${points.map(p => `${p.x},${p.y}`).join(' L ')} Z`;
-
-  let path = "";
-  const len = points.length;
-
-  for (let i = 0; i < len; i++) {
-    const p0 = points[(i - 1 + len) % len];
-    const p1 = points[i];
-    const p2 = points[(i + 1) % len];
-
-    const v1 = { x: p0.x - p1.x, y: p0.y - p1.y };
-    const v2 = { x: p2.x - p1.x, y: p2.y - p1.y };
-
-    const l1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
-    const l2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
-
-    const r = Math.min(radius, l1 / 2, l2 / 2);
-
-    const startX = p1.x + (v1.x / l1) * r;
-    const startY = p1.y + (v1.y / l1) * r;
-
-    const endX = p1.x + (v2.x / l2) * r;
-    const endY = p1.y + (v2.y / l2) * r;
-
-    if (i === 0) {
-      path += `M ${startX},${startY}`;
-    } else {
-      path += ` L ${startX},${startY}`;
-    }
-
-    path += ` Q ${p1.x},${p1.y} ${endX},${endY}`;
-  }
-
-  path += " Z";
-  return path;
-};
-
-const BubbleComponent: React.FC<BubbleProps> = ({ 
-  room, 
-  pixelsPerMeter, 
-  zoomScale,
-  updateRoom, 
-  onFloorChange,
-  isSelected,
-  onSelect,
-  is3D,
-  showSunWarning,
-  onConnectionStart,
-  isConnecting,
-  snapEnabled,
-  snapPixelUnit,
-  unitSystem,
-  isConnectionSource = false,
-  otherRooms = [],
-  diagramStyle
+const BubbleComponent: React.FC<BubbleProps> = ({
+    room, zoomScale, updateRoom, isSelected, onSelect, diagramStyle, snapEnabled, snapPixelUnit,
+    getSnappedPosition, onLinkToggle, isLinkingSource
 }) => {
-  const bubbleRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
-  const [showTools, setShowTools] = useState(false);
-  const [isEditingOutline, setIsEditingOutline] = useState(false);
-  
-  // Polygon Editing State
-  const [draggingVertexIndex, setDraggingVertexIndex] = useState<number | null>(null);
-  const [draggingEdgeIndex, setDraggingEdgeIndex] = useState<number | null>(null);
-  const [hoveredEdgeIndex, setHoveredEdgeIndex] = useState<number | null>(null);
-  const [hoveredVertexIndex, setHoveredVertexIndex] = useState<number | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [resizeHandle, setResizeHandle] = useState<string | null>(null);
+    const [showTools, setShowTools] = useState(false);
 
-  // Snapping Visualization
-  const [activeSnapLines, setActiveSnapLines] = useState<{x: number | null, y: number | null}>({x: null, y: null});
-  const [alignmentLines, setAlignmentLines] = useState<{x?: number, y?: number}[]>([]);
+    // Polygon Editing State
+    const [hoveredVertex, setHoveredVertex] = useState<number | null>(null);
+    const [hoveredEdge, setHoveredEdge] = useState<number | null>(null);
+    const [draggedVertex, setDraggedVertex] = useState<number | null>(null);
+    const [draggedEdge, setDraggedEdge] = useState<number | null>(null);
+    const [isExtruding, setIsExtruding] = useState(false);
+    const [polygonSnapshot, setPolygonSnapshot] = useState<Point[] | null>(null);
 
-  const startDragState = useRef({ 
-    startX: 0, 
-    startY: 0, 
-    roomX: 0, 
-    roomY: 0,
-    roomW: 0,
-    roomH: 0,
-    initialPoints: [] as Point[]
-  });
+    const [selectedVertices, setSelectedVertices] = useState<Set<number>>(new Set());
 
-  const getZoneStyle = (z: string) => {
-    const key = Object.keys(ZONE_COLORS).find(k => z.toLowerCase().includes(k.toLowerCase()));
-    return key ? ZONE_COLORS[key] : ZONE_COLORS['Default'];
-  };
-  const baseStyle = getZoneStyle(room.zone);
-  
-  const visualStyle = useMemo(() => {
-      if (diagramStyle.colorMode === 'monochrome') {
-          return { bg: 'bg-slate-100', border: 'border-slate-800', text: 'text-slate-900' };
-      }
-      if (diagramStyle.colorMode === 'pastel') {
-          return baseStyle;
-      }
-      return baseStyle;
-  }, [baseStyle, diagramStyle.colorMode]);
+    const bubbleRef = useRef<HTMLDivElement>(null);
+    const startDragState = useRef({
+        startX: 0, startY: 0,
+        roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height
+    });
 
-  const ensurePolygon = () => {
-      if (room.polygon && room.polygon.length > 0) return room.polygon;
-      return [
-          { x: 0, y: 0 },
-          { x: room.width, y: 0 },
-          { x: room.width, y: room.height },
-          { x: 0, y: room.height }
-      ];
-  };
-
-  const activePoints = useMemo(() => room.polygon || [
-      { x: 0, y: 0 },
-      { x: room.width, y: 0 },
-      { x: room.width, y: room.height },
-      { x: 0, y: room.height }
-  ], [room.polygon, room.width, room.height]);
-
-  const toggleEditMode = () => {
-      if (!isEditingOutline) {
-          const poly = ensurePolygon();
-          updateRoom(room.id, { polygon: poly });
-          setIsEditingOutline(true);
-          setShowTools(false);
-      } else {
-          setIsEditingOutline(false);
-      }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; 
-    if (is3D) return; 
-    
-    if (showTools && !(e.target as HTMLElement).closest('.bubble-tools')) {
-        setShowTools(false);
-    }
-
-    if (isConnecting && !isConnectionSource) {
-        e.stopPropagation();
-        onConnectionStart(room.id);
-        return;
-    }
-
-    e.stopPropagation();
-    
-    if (e.detail === 2) {
-        toggleEditMode();
-        return;
-    }
-
-    const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
-    onSelect(room.id, isMulti);
-    
-    setIsDragging(true);
-    
-    startDragState.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      roomX: room.x,
-      roomY: room.y,
-      roomW: room.width,
-      roomH: room.height,
-      initialPoints: []
+    const getZoneStyle = (z: string) => {
+        const key = Object.keys(ZONE_COLORS).find(k => z.toLowerCase().includes(k.toLowerCase()));
+        return key ? ZONE_COLORS[key] : ZONE_COLORS['Default'];
     };
-  };
+    const visualStyle = getZoneStyle(room.zone);
 
-  const handleVertexMouseDown = (e: React.MouseEvent, index: number) => {
-      e.stopPropagation();
-      e.preventDefault();
-      setDraggingVertexIndex(index);
-      startDragState.current = {
-          startX: e.clientX,
-          startY: e.clientY,
-          roomX: 0, roomY: 0, roomW: 0, roomH: 0,
-          initialPoints: [...ensurePolygon()]
-      };
-  };
+    const activePoints = useMemo(() => room.polygon || [
+        { x: 0, y: 0 }, { x: room.width, y: 0 }, { x: room.width, y: room.height }, { x: 0, y: room.height }
+    ], [room.polygon, room.width, room.height]);
 
-  const handleEdgeMouseDown = (e: React.MouseEvent, index: number) => {
-      e.stopPropagation();
-      e.preventDefault();
-      let poly = [...ensurePolygon()];
-      let activeIndex = index;
-      if (e.ctrlKey || e.metaKey) {
-          const p1 = poly[index];
-          const p2 = poly[(index + 1) % poly.length];
-          poly.splice(index + 1, 0, { ...p1 }, { ...p2 });
-          activeIndex = index + 1;
-          updateRoom(room.id, { polygon: poly });
-      }
-      setDraggingEdgeIndex(activeIndex);
-      startDragState.current = {
-          startX: e.clientX,
-          startY: e.clientY,
-          roomX: 0, roomY: 0, roomW: 0, roomH: 0,
-          initialPoints: poly
-      };
-  };
+    const polygonPath = useMemo(() => createRoundedPath(activePoints, 8), [activePoints]);
 
-  const handleEdgeDoubleClick = (e: React.MouseEvent, index: number) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const poly = [...ensurePolygon()];
-      const rect = bubbleRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const clickX = (e.clientX - rect.left) / zoomScale;
-      const clickY = (e.clientY - rect.top) / zoomScale;
-      poly.splice(index + 1, 0, { x: clickX, y: clickY });
-      updateRoom(room.id, { polygon: poly });
-      setDraggingVertexIndex(index + 1);
-      startDragState.current = {
-          startX: e.clientX,
-          startY: e.clientY,
-          roomX: 0, roomY: 0, roomW: 0, roomH: 0,
-          initialPoints: poly
-      };
-  };
+    const snap = (val: number) => {
+        if (!snapEnabled) return val;
+        return Math.round(val / snapPixelUnit) * snapPixelUnit;
+    };
 
-  const snap = (val: number) => {
-    if (!snapEnabled) return val;
-    return Math.round(val / snapPixelUnit) * snapPixelUnit;
-  };
+    // Keyboard Listener for Deletion
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (selectedVertices.size > 0 && (e.key === 'Delete' || e.key === 'Backspace')) {
+                // Check if polygon has enough points
+                if (activePoints.length - selectedVertices.size < 3) {
+                    // Need at least 3 points
+                    return;
+                }
 
-  const getSnapTargets = (ignoreIndices: number[]) => {
-      const targetsX: number[] = [];
-      const targetsY: number[] = [];
-      const currentPoly = startDragState.current.initialPoints;
-      currentPoly.forEach((p, i) => {
-          if (!ignoreIndices.includes(i)) {
-              targetsX.push(p.x + room.x);
-              targetsY.push(p.y + room.y);
-          }
-      });
-      otherRooms.forEach(r => {
-          targetsX.push(r.x, r.x + r.width);
-          targetsY.push(r.y, r.y + r.height);
-          if (r.polygon) {
-              r.polygon.forEach(p => {
-                  targetsX.push(r.x + p.x);
-                  targetsY.push(r.y + p.y);
-              });
-          }
-      });
-      return { targetsX, targetsY };
-  };
+                const newPoints = activePoints.filter((_, i) => !selectedVertices.has(i));
 
-  const calculateSmartSnap = (val: number, targets: number[], currentRoomBase: number) => {
-      const threshold = 10 / zoomScale;
-      let snapped = val;
-      let guide = null;
-      const absVal = currentRoomBase + val;
-      for (const t of targets) {
-          if (Math.abs(absVal - t) < threshold) {
-              snapped = t - currentRoomBase;
-              guide = t; 
-              break; 
-          }
-      }
-      return { val: snapped, guide };
-  };
+                const newArea = Math.round(calculatePolygonArea(newPoints) / 400);
+                updateRoom(room.id, { polygon: newPoints, area: newArea > 0 ? newArea : room.area });
+                setSelectedVertices(new Set());
+            }
+        };
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const dxScreen = e.clientX - startDragState.current.startX;
-      const dyScreen = e.clientY - startDragState.current.startY;
-      const dxWorld = dxScreen / zoomScale;
-      const dyWorld = dyScreen / zoomScale;
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedVertices, activePoints, room.id, updateRoom]);
 
-      let newAlignmentLines: {x?: number, y?: number}[] = [];
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            const dxScreen = e.clientX - startDragState.current.startX;
+            const dyScreen = e.clientY - startDragState.current.startY;
+            const dxWorld = dxScreen / zoomScale;
+            const dyWorld = dyScreen / zoomScale;
 
-      if (resizeHandle) {
-          const s = startDragState.current;
-          const minSize = 20;
+            if (resizeHandle) {
+                const s = startDragState.current;
+                const minSize = 20;
+                let nW = s.roomW;
+                let nH = s.roomH;
 
-          let newX = s.roomX;
-          let newY = s.roomY;
-          let newW = s.roomW;
-          let newH = s.roomH;
+                if (resizeHandle === 'se') {
+                    nW = Math.max(minSize, s.roomW + dxWorld);
+                    if (snapEnabled) nW = snap(nW);
+                    nH = (s.roomW * s.roomH) / nW;
+                }
 
-          // Simple Resizing Logic (Standard)
-          if (resizeHandle === 'e') {
-              newW = Math.max(minSize, s.roomW + dxWorld);
-              if (snapEnabled) newW = snap(newW);
-          } else if (resizeHandle === 'w') {
-              const proposedW = s.roomW - dxWorld;
-              if (proposedW >= minSize) {
-                  newW = proposedW;
-                  if (snapEnabled) {
-                     // Snap logic for left edge is tricky, we snap the resulting X position
-                     const snappedX = snap(s.roomX + dxWorld);
-                     const diff = snappedX - (s.roomX + dxWorld);
-                     newW = snap(newW - diff);
-                     newX = snappedX;
-                  } else {
-                     newX = s.roomX + dxWorld;
-                  }
-              }
-          } else if (resizeHandle === 's') {
-              newH = Math.max(minSize, s.roomH + dyWorld);
-              if (snapEnabled) newH = snap(newH);
-          } else if (resizeHandle === 'n') {
-             const proposedH = s.roomH - dyWorld;
-             if (proposedH >= minSize) {
-                 newH = proposedH;
-                 if (snapEnabled) {
-                    const snappedY = snap(s.roomY + dyWorld);
-                    const diff = snappedY - (s.roomY + dyWorld);
-                    newH = snap(newH - diff);
-                    newY = snappedY;
-                 } else {
-                    newY = s.roomY + dyWorld;
-                 }
-             }
-          }
-          
-          // Recalculate Area based on new W/H
-          const newArea = (newW * newH) / (pixelsPerMeter * pixelsPerMeter);
-          
-          updateRoom(room.id, { x: newX, y: newY, width: newW, height: newH, area: Number(newArea.toFixed(2)) });
-      }
-      else if (draggingVertexIndex !== null) {
-          const newPoints = [...startDragState.current.initialPoints];
-          const point = newPoints[draggingVertexIndex];
-          let nx = point.x + dxWorld;
-          let ny = point.y + dyWorld;
-          const { targetsX, targetsY } = getSnapTargets([draggingVertexIndex]);
-          const snapX = calculateSmartSnap(nx, targetsX, room.x);
-          const snapY = calculateSmartSnap(ny, targetsY, room.y);
+                updateRoom(room.id, { width: nW, height: nH });
 
-          if (snapX.guide !== null) { nx = snapX.val; newAlignmentLines.push({ x: snapX.guide }); }
-          else if (snapEnabled) { nx = Math.round((room.x + nx) / snapPixelUnit) * snapPixelUnit - room.x; }
+            } else if (draggedVertex !== null && polygonSnapshot) {
+                // Moving Vertex (or multiple)
+                const newPoints = [...polygonSnapshot];
 
-          if (snapY.guide !== null) { ny = snapY.val; newAlignmentLines.push({ y: snapY.guide }); }
-          else if (snapEnabled) { ny = Math.round((room.y + ny) / snapPixelUnit) * snapPixelUnit - room.y; }
+                // Which vertices to move?
+                // If dragged vertex is selected, move ALL selected.
+                // Otherwise move just the dragged one.
+                const indicesToMove = selectedVertices.has(draggedVertex)
+                    ? Array.from(selectedVertices)
+                    : [draggedVertex];
 
-          newPoints[draggingVertexIndex] = { x: nx, y: ny };
-          const newArea = calculatePolygonArea(newPoints, pixelsPerMeter);
-          const xs = newPoints.map(p => p.x); const ys = newPoints.map(p => p.y);
-          updateRoom(room.id, { polygon: newPoints, area: Number(newArea.toFixed(2)), width: Math.max(room.width, Math.max(...xs)), height: Math.max(room.height, Math.max(...ys)) });
-      }
-      else if (draggingEdgeIndex !== null) {
-          const newPoints = [...startDragState.current.initialPoints];
-          const i1 = draggingEdgeIndex;
-          const i2 = (draggingEdgeIndex + 1) % newPoints.length;
-          let dx = dxWorld; let dy = dyWorld;
-          if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0;
-          if (snapEnabled) { dx = snap(dx); dy = snap(dy); }
+                indicesToMove.forEach(index => {
+                    // Safe check
+                    if (index >= newPoints.length) return;
 
-          newPoints[i1] = { x: newPoints[i1].x + dx, y: newPoints[i1].y + dy };
-          newPoints[i2] = { x: newPoints[i2].x + dx, y: newPoints[i2].y + dy };
-          const newArea = calculatePolygonArea(newPoints, pixelsPerMeter);
-           const xs = newPoints.map(p => p.x); const ys = newPoints.map(p => p.y);
-          updateRoom(room.id, { polygon: newPoints, area: Number(newArea.toFixed(2)), width: Math.max(room.width, Math.max(...xs)), height: Math.max(room.height, Math.max(...ys)) });
-      }
-      else if (isDragging) {
-        let rawX = startDragState.current.roomX + dxWorld;
-        let rawY = startDragState.current.roomY + dyWorld;
-        const w = startDragState.current.roomW;
-        const h = startDragState.current.roomH;
+                    const v = newPoints[index];
+                    // We apply delta from snapshot
+                    // Note: logic assumes dragging relative to START.
+                    // Since we use polygonSnapshot (original state), we can simply add dxWorld to original pos.
 
-        const threshold = 10 / zoomScale;
-        let snappedX: number | null = null;
-        let snappedY: number | null = null;
-        let minDX = threshold;
-        let minDY = threshold;
+                    // Optimization: if dragging multiple, snap might behave weirdly if we snap each individually.
+                    // Usually we snap the PRIMARY dragged vertex, and apply the same delta to others?
+                    // Or snap all? Let's snap all for grid alignment consistency.
 
-        const targetXs: number[] = [];
-        const targetYs: number[] = [];
-        otherRooms.forEach(r => {
-            targetXs.push(r.x, r.x + r.width/2, r.x + r.width);
-            targetYs.push(r.y, r.y + r.height/2, r.y + r.height);
+                    let nx = v.x + dxWorld;
+                    let ny = v.y + dyWorld;
+
+                    if (snapEnabled) {
+                        nx = snap(nx);
+                        ny = snap(ny);
+                    }
+
+                    newPoints[index] = { x: nx, y: ny };
+                });
+
+                const newArea = Math.round(calculatePolygonArea(newPoints) / 400);
+                updateRoom(room.id, { polygon: newPoints, area: newArea > 0 ? newArea : room.area });
+
+            } else if (draggedEdge !== null && polygonSnapshot) {
+                // Moving Edge
+                const newPoints = [...polygonSnapshot];
+                const idx1 = draggedEdge;
+                const idx2 = (draggedEdge + 1) % polygonSnapshot.length;
+
+                if (isExtruding) {
+                    const v1 = newPoints[idx1];
+                    const v2 = newPoints[idx2];
+
+                    let nx1 = v1.x + dxWorld;
+                    let ny1 = v1.y + dyWorld;
+                    let nx2 = v2.x + dxWorld;
+                    let ny2 = v2.y + dyWorld;
+
+                    if (snapEnabled) {
+                        nx1 = snap(nx1); ny1 = snap(ny1);
+                        nx2 = snap(nx2); ny2 = snap(ny2);
+                    }
+
+                    newPoints[idx1] = { x: nx1, y: ny1 };
+                    newPoints[idx2] = { x: nx2, y: ny2 };
+
+                } else {
+                    // Standard Edge Drag
+                    const v1 = newPoints[idx1];
+                    const v2 = newPoints[idx2];
+
+                    let nx1 = v1.x + dxWorld;
+                    let ny1 = v1.y + dyWorld;
+                    let nx2 = v2.x + dxWorld;
+                    let ny2 = v2.y + dyWorld;
+
+                    if (snapEnabled) {
+                        nx1 = snap(nx1); ny1 = snap(ny1);
+                        nx2 = snap(nx2); ny2 = snap(ny2);
+                    }
+
+                    newPoints[idx1] = { x: nx1, y: ny1 };
+                    newPoints[idx2] = { x: nx2, y: ny2 };
+                }
+
+                const newArea = Math.round(calculatePolygonArea(newPoints) / 400);
+                updateRoom(room.id, { polygon: newPoints, area: newArea > 0 ? newArea : room.area });
+
+            } else if (isDragging) {
+                // Moving Whole Room
+                let nX = startDragState.current.roomX + dxWorld;
+                let nY = startDragState.current.roomY + dyWorld;
+
+                if (getSnappedPosition) {
+                    const snapped = getSnappedPosition({ ...room, x: nX, y: nY }, room.id);
+                    nX = snapped.x;
+                    nY = snapped.y;
+                }
+                updateRoom(room.id, { x: nX, y: nY });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDragging(false);
+            setResizeHandle(null);
+            setDraggedVertex(null);
+            setDraggedEdge(null);
+            setIsExtruding(false);
+            setPolygonSnapshot(null);
+            if (getSnappedPosition) getSnappedPosition(room, '');
+        };
+
+        if (isDragging || resizeHandle || draggedVertex !== null || draggedEdge !== null) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDragging, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices]); // Added selectedVertices dependency
+
+    const handleResizeStart = (e: React.MouseEvent, handle: string) => {
+        e.stopPropagation();
+        setResizeHandle(handle);
+        startDragState.current = {
+            startX: e.clientX, startY: e.clientY,
+            roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height
+        };
+    };
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        // Clear vertex selection if clicking on room body, UNLESS holding ctrl? 
+        // Usually clicking body selects room, so handling vertices should be distinct.
+        // User wants to move "them" (vertices).
+        // If I click background of room, I am moving ROOM.
+        // So yes, clear vertex selection.
+        if (selectedVertices.size > 0 && !e.ctrlKey && !e.shiftKey) setSelectedVertices(new Set());
+
+        onSelect(room.id, e.shiftKey || e.ctrlKey || e.metaKey);
+        setIsDragging(true);
+        startDragState.current = {
+            startX: e.clientX, startY: e.clientY,
+            roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height
+        };
+    };
+
+    // Polygon Handling
+    const handleVertexDown = (e: React.MouseEvent, index: number) => {
+        e.stopPropagation();
+        setDraggedVertex(index);
+
+        // Multi-selection logic
+        const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
+
+        setSelectedVertices(prev => {
+            const next = new Set(prev);
+            if (isMulti) {
+                // Toggle
+                if (next.has(index)) {
+                    // Don't deselect on down if we might drag?
+                    // Standard behavior: 
+                    // - If dragging a selected item, don't toggle.
+                    // - If clicking to just toggle, toggle.
+                    // Hard to distinguish without mouseUp.
+                    // Simple approach: Always toggle on click?
+                    // But user says "I should still be able to move them after selection."
+                    // If I ctrl-click selected item, it deselects. I can't drag it.
+                    // Logic: If already selected, keep it selected (to allow drag).
+                    // If we want to deselect, we usually click without drag?
+                    // Let's implement simpler: Toggle if not dragging? 
+                    // Actually, if we want to add to selection, we Ctrl+Click.
+
+                    // If I simply want to drag a group, I click one of them (without Ctrl).
+                    // But that would clear others?
+
+                    // Let's follow standard file explorer logic:
+                    // Click (No Ctrl): 
+                    //   - If target IS selected: Don't clear others yet (wait for mouse up? or just keep). 
+                    //   - If target NOT selected: Clear others, select target.
+
+                    // Click (Ctrl):
+                    //   - Toggle target.
+
+                    if (next.has(index)) next.delete(index);
+                    else next.add(index);
+
+                } else {
+                    next.delete(index); // Toggle logic? No wait.
+                }
+            } else {
+                // Single Click
+                // If not already selected, select exclusive
+                if (!next.has(index)) {
+                    next.clear();
+                    next.add(index);
+                }
+                // If it WAS selected, we keep it and others.
+                // What if I just want to select this one? MouseUp handles that?
+                // Let's ignoring MouseUp logic for now to avoid complexity.
+            }
+            return next;
         });
 
-        const myXs = [rawX, rawX + w/2, rawX + w];
-        const myXOffsets = [0, w/2, w]; 
-        for (let i = 0; i < myXs.length; i++) {
-            for (const tx of targetXs) {
-                const diff = Math.abs(myXs[i] - tx);
-                if (diff < minDX) { minDX = diff; snappedX = tx - myXOffsets[i]; }
+        setPolygonSnapshot(activePoints);
+        startDragState.current = {
+            startX: e.clientX, startY: e.clientY,
+            roomX: 0, roomY: 0, roomW: 0, roomH: 0
+        };
+    };
+
+    const handleEdgeDown = (e: React.MouseEvent, index: number) => {
+        e.stopPropagation();
+
+        // Clear vertex selection when starting to drag an edge
+        if (selectedVertices.size > 0) setSelectedVertices(new Set());
+
+        // Double Click Check: Insert Vertex
+        if (e.detail === 2) {
+            if (!bubbleRef.current) return;
+            const rect = bubbleRef.current.getBoundingClientRect();
+            let localX = (e.clientX - rect.left) / zoomScale;
+            let localY = (e.clientY - rect.top) / zoomScale;
+
+            if (snapEnabled) {
+                localX = snap(localX);
+                localY = snap(localY);
             }
+
+            const newPoints = [...activePoints];
+            // Insert at index + 1 (after the start node of the edge)
+            newPoints.splice(index + 1, 0, { x: localX, y: localY });
+
+            const newArea = Math.round(calculatePolygonArea(newPoints) / 400);
+            updateRoom(room.id, { polygon: newPoints, area: newArea > 0 ? newArea : room.area });
+
+            // Select the new vertex
+            setSelectedVertices(new Set([index + 1]));
+            return;
         }
-        const myYs = [rawY, rawY + h/2, rawY + h];
-        const myYOffsets = [0, h/2, h];
-        for (let i = 0; i < myYs.length; i++) {
-            for (const ty of targetYs) {
-                const diff = Math.abs(myYs[i] - ty);
-                if (diff < minDY) { minDY = diff; snappedY = ty - myYOffsets[i]; }
-            }
+
+        const isCtrl = e.ctrlKey || e.metaKey;
+        if (selectedVertices.size > 0) setSelectedVertices(new Set()); // Clear vertex selection when dragging edge
+
+        let initialPoints = activePoints;
+        let activeIndex = index;
+
+        if (isCtrl) {
+            // Extrude Mode: Insert 2 new points to form a degenerate rect segment, then drag them.
+            // Segment is P_i -> P_next
+            // We become P_i -> P_new1 -> P_new2 -> P_next
+            // P_new1 starts at P_i, P_new2 starts at P_next
+
+            const p1 = activePoints[index];
+            const p2 = activePoints[(index + 1) % activePoints.length];
+
+            const newPoly = [...activePoints];
+            // Splice in new points. Note: inserting after index.
+            // ... p_index ... p_next ...
+            // insert at index+1 and index+2
+            newPoly.splice(index + 1, 0, { ...p1 }, { ...p2 });
+
+            initialPoints = newPoly;
+            activeIndex = index + 1; // We want to drag the NEW segment (indices index+1 and index+2)
+
+            // Immediate update to spawn vertices
+            updateRoom(room.id, { polygon: newPoly });
+            setIsExtruding(true);
+        } else {
+            setIsExtruding(false);
         }
 
-        if (snappedX !== null) rawX = snappedX; else if (snapEnabled) rawX = snap(rawX);
-        if (snappedY !== null) rawY = snappedY; else if (snapEnabled) rawY = snap(rawY);
-
-        setActiveSnapLines({ x: snappedX !== null ? snappedX : null, y: snappedY !== null ? snappedY : null });
-        updateRoom(room.id, { x: rawX, y: rawY });
-      }
-
-      setAlignmentLines(newAlignmentLines);
+        setDraggedEdge(activeIndex);
+        setPolygonSnapshot(initialPoints);
+        startDragState.current = {
+            startX: e.clientX, startY: e.clientY,
+            roomX: 0, roomY: 0, roomW: 0, roomH: 0
+        };
     };
 
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      setResizeHandle(null);
-      setDraggingVertexIndex(null);
-      setDraggingEdgeIndex(null);
-      setActiveSnapLines({x: null, y: null});
-      setAlignmentLines([]);
-    };
+    const RenderCorner = ({ cursor, pos }: { cursor: string, pos: React.CSSProperties }) => (
+        <div
+            className="absolute w-3 h-3 bg-white border-2 border-primary rounded-full z-[70] hover:bg-primary transition-all cursor-pointer shadow-lg active:scale-150"
+            style={{ ...pos, cursor, transform: 'translate(-50%, -50%)' }}
+            onMouseDown={(e) => handleResizeStart(e, cursor.replace('-resize', ''))}
+        />
+    );
 
-    if (isDragging || resizeHandle || draggingVertexIndex !== null || draggingEdgeIndex !== null) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, resizeHandle, draggingVertexIndex, draggingEdgeIndex, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, otherRooms, room.x, room.y]);
-  
-  const handleResizeStart = (e: React.MouseEvent, handle: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (is3D || room.polygon) return;
-    setResizeHandle(handle);
-    startDragState.current = {
-      startX: e.clientX, startY: e.clientY,
-      roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height, initialPoints: []
-    };
-  };
-
-  const darken = (cls: string) => cls.replace('100', '200').replace('200', '300');
-  const zHeight = Math.sqrt(room.area) * 2; 
-
-  const areaDisplay = unitSystem === 'imperial' 
-      ? `${Math.round(room.area * 10.7639)} ft²` 
-      : `${room.area} m²`;
-
-  const isCustomShape = !!room.polygon;
-
-  const polygonPath = useMemo(() => {
-      if (!activePoints.length) return '';
-      return createRoundedPath(activePoints, 8); 
-  }, [activePoints]);
-
-  const handleSize = 24 / zoomScale; 
-  const handleThickness = 6 / zoomScale;
-
-  // Render Handle Component (Pill Shape)
-  const RenderHandle = ({ cursor, pos, isVertical }: { cursor: string, pos: React.CSSProperties, isVertical: boolean }) => (
-      <div 
-        className={`absolute bg-white border border-slate-300 rounded-full z-50 hover:bg-primary hover:border-primary transition-colors shadow-sm flex items-center justify-center`}
-        style={{ 
-            width: isVertical ? handleThickness : handleSize, 
-            height: isVertical ? handleSize : handleThickness, 
-            ...pos, 
-            cursor 
-        }}
-        onMouseDown={(e) => handleResizeStart(e, cursor.replace('-resize', ''))}
-      >
-          <div className={`bg-slate-300 ${isVertical ? 'w-px h-3' : 'h-px w-3'}`} />
-      </div>
-  );
-
-  const hairline = 1 / zoomScale;
-
-  return (
-    <div
-      ref={bubbleRef}
-      data-room-id={room.id}
-      className={`absolute transition-shadow group pointer-events-auto
-        ${isSelected && !is3D ? 'z-20' : 'z-0'}
-        ${isConnecting && !isConnectionSource ? 'cursor-crosshair' : ''}
-      `}
-      style={{
-        transform: `translate3d(${room.x}px, ${room.y}px, 0)`,
-        width: isCustomShape ? 0 : room.width, 
-        height: isCustomShape ? 0 : room.height,
-        cursor: is3D ? 'default' : isDragging ? 'grabbing' : isConnecting && !isConnectionSource ? 'crosshair' : 'grab',
-        transition: isDragging || resizeHandle || draggingVertexIndex!==null || draggingEdgeIndex!==null ? 'none' : 'width 0.1s, height 0.1s',
-        transformStyle: 'preserve-3d',
-      }}
-      onMouseDown={handleMouseDown}
-      onDoubleClick={handleMouseDown} 
-    >
-        {/* Guides */}
-        {activeSnapLines.x !== null && !is3D && (<div className="absolute top-0 bottom-0 bg-red-500 -z-10 h-[200vh] -top-[100vh]" style={{left: activeSnapLines.x - room.x, width: hairline}} />)}
-        {activeSnapLines.y !== null && !is3D && (<div className="absolute left-0 right-0 bg-red-500 -z-10 w-[200vw] -left-[100vw]" style={{top: activeSnapLines.y - room.y, height: hairline}} />)}
-
-        {!is3D && (
-            <div className="relative">
-                {isCustomShape ? (
-                    <svg className="overflow-visible absolute top-0 left-0">
-                        <path 
-                            d={polygonPath}
-                            className={`${visualStyle.bg.replace('bg-', 'fill-')} ${visualStyle.border.replace('border-', 'stroke-')}`}
-                            strokeWidth={diagramStyle.borderWidth / zoomScale}
-                            strokeLinejoin="round"
-                            strokeLinecap="round"
-                            fillOpacity={diagramStyle.opacity}
-                        />
-                    </svg>
-                ) : (
-                   <div className={`absolute top-0 left-0 w-full h-full ${diagramStyle.cornerRadius} ${visualStyle.bg} ${visualStyle.border} ${diagramStyle.shadow} border-solid backdrop-blur-sm transition-all`}
-                        style={{ width: room.width, height: room.height, borderWidth: diagramStyle.borderWidth / zoomScale, opacity: diagramStyle.opacity }} 
-                   />
-                )}
-
-                {/* --- 4-Edge Scaling Handles (Pills) --- */}
-                {!isCustomShape && isSelected && !isDragging && (
-                    <>
-                        <RenderHandle cursor="n-resize" pos={{ top: -handleThickness/2, left: '50%', transform: 'translateX(-50%)' }} isVertical={false} />
-                        <RenderHandle cursor="s-resize" pos={{ bottom: -handleThickness/2, left: '50%', transform: 'translateX(-50%)' }} isVertical={false} />
-                        <RenderHandle cursor="w-resize" pos={{ left: -handleThickness/2, top: '50%', transform: 'translateY(-50%)' }} isVertical={true} />
-                        <RenderHandle cursor="e-resize" pos={{ right: -handleThickness/2, top: '50%', transform: 'translateY(-50%)' }} isVertical={true} />
-                    </>
-                )}
-
-                {/* Editing Overlay (Custom Shape) */}
-                {isEditingOutline && (
-                    <svg className="overflow-visible absolute top-0 left-0 pointer-events-none">
-                         <path d={polygonPath} fill="none" stroke="#2563eb" strokeWidth={2 / zoomScale} strokeDasharray={`${4/zoomScale},${4/zoomScale}`} strokeLinejoin="round" />
-                         {activePoints.map((p, i) => {
-                             const nextP = activePoints[(i + 1) % activePoints.length];
-                             return (
-                                 <g key={i}>
-                                     <line 
-                                        x1={p.x} y1={p.y} x2={nextP.x} y2={nextP.y} 
-                                        stroke={hoveredEdgeIndex === i || draggingEdgeIndex === i ? 'rgba(37, 99, 235, 0.5)' : 'transparent'} 
-                                        strokeWidth={hoveredEdgeIndex === i ? 12 / zoomScale : 8 / zoomScale} 
-                                        className={`pointer-events-auto cursor-row-resize ${draggingEdgeIndex === i ? 'cursor-grabbing' : ''}`}
-                                        onMouseDown={(e) => handleEdgeMouseDown(e, i)}
-                                        onDoubleClick={(e) => handleEdgeDoubleClick(e, i)}
-                                        onMouseEnter={() => setHoveredEdgeIndex(i)} onMouseLeave={() => setHoveredEdgeIndex(null)}
+    return (
+        <div
+            ref={bubbleRef}
+            className={`absolute bubble-transition pointer-events-auto ${isSelected ? 'z-20' : 'z-10'} ${isLinkingSource ? 'ring-4 ring-yellow-400 ring-offset-2 rounded-xl' : ''}`}
+            style={{
+                transform: `translate3d(${room.x}px, ${room.y}px, 0)`,
+                width: room.polygon ? 0 : room.width,
+                height: room.polygon ? 0 : room.height,
+                cursor: isDragging ? 'grabbing' : 'grab'
+            }}
+            onMouseDown={handleMouseDown}
+        >
+            {/* Visual Surface */}
+            <div className="relative group">
+                {room.polygon ? (
+                    <div className="overflow-visible absolute top-0 left-0">
+                        <svg className="overflow-visible">
+                            <path
+                                d={polygonPath}
+                                className={`${visualStyle.bg.replace('bg-', 'fill-')} ${visualStyle.border.replace('border-', 'stroke-')}`}
+                                strokeWidth={diagramStyle.borderWidth / zoomScale}
+                                strokeDasharray={diagramStyle.sketchy ? `${10 / zoomScale},${10 / zoomScale}` : "none"}
+                                fillOpacity={diagramStyle.opacity}
+                            />
+                            {/* Polygon Edges (Hit Areas for Editing) */}
+                            {isSelected && activePoints.map((p, i) => {
+                                const next = activePoints[(i + 1) % activePoints.length];
+                                return (
+                                    <line
+                                        key={`edge-${i}`}
+                                        x1={p.x} y1={p.y} x2={next.x} y2={next.y}
+                                        stroke="transparent"
+                                        strokeWidth={10 / zoomScale}
+                                        className="cursor-move hover:stroke-primary/20 transition-colors"
+                                        onMouseEnter={() => setHoveredEdge(i)}
+                                        onMouseLeave={() => setHoveredEdge(null)}
+                                        onMouseDown={(e) => handleEdgeDown(e, i)}
                                     />
-                                     <circle 
-                                        cx={p.x} cy={p.y} r={hoveredVertexIndex === i || draggingVertexIndex === i ? 8 / zoomScale : 6 / zoomScale} 
-                                        fill="white" stroke="#2563eb" strokeWidth={2 / zoomScale} 
-                                        className="pointer-events-auto cursor-move"
-                                        onMouseDown={(e) => handleVertexMouseDown(e, i)} 
-                                        onMouseEnter={() => setHoveredVertexIndex(i)} onMouseLeave={() => setHoveredVertexIndex(null)}
-                                     />
-                                 </g>
-                             )
-                         })}
-                    </svg>
-                )}
-
-                <div 
-                    className="absolute top-0 left-0 flex flex-col items-center justify-center text-center pointer-events-none overflow-hidden"
-                    style={{ 
-                        width: isCustomShape ? Math.max(...activePoints.map(p => p.x)) : room.width, 
-                        height: isCustomShape ? Math.max(...activePoints.map(p => p.y)) : room.height 
-                    }}
-                >
-                    <div style={{ transform: `scale(${1/zoomScale})`, transformOrigin: 'center' }} className={`flex flex-col items-center p-2 ${visualStyle.text} ${diagramStyle.fontFamily}`}>
-                         <div className={`mb-1 transition-opacity ${isSelected || showTools ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} pointer-events-auto`}>
-                             <button
-                                onClick={(e) => { e.stopPropagation(); setShowTools(!showTools); }}
-                                className={`w-6 h-6 bg-white border border-slate-200 rounded-full shadow-sm flex items-center justify-center text-slate-500 hover:text-primary hover:border-primary transition-all ${showTools ? 'text-primary border-primary' : ''}`}
-                                title="Edit Options"
-                             >
-                                {showTools ? <X size={12} /> : <Pencil size={12} />}
-                             </button>
-                        </div>
-
-                        <span className="font-bold text-xs md:text-sm leading-tight select-none block whitespace-nowrap">{room.name}</span>
-                        <span className={`text-[10px] opacity-70 select-none block ${isCustomShape ? 'text-purple-700 font-bold' : ''}`}>
-                            {areaDisplay}
-                        </span>
-
-                        {isEditingOutline && (
-                            <span className="mt-1 bg-blue-100 text-blue-700 text-[9px] px-1 py-0.5 rounded border border-blue-200 shadow-sm whitespace-nowrap">
-                                Ctrl+Drag edge to Extrude
-                            </span>
-                        )}
+                                );
+                            })}
+                        </svg>
+                        {/* Vertices */}
+                        {isSelected && activePoints.map((p, i) => (
+                            <div
+                                key={`v-${i}`}
+                                className={`absolute border rounded-full z-[80] hover:scale-150 transition-all cursor-crosshair ${selectedVertices.has(i) ? 'bg-primary border-white scale-125' : 'bg-white border-primary'}`}
+                                style={{
+                                    left: p.x, top: p.y,
+                                    width: 10 / zoomScale, height: 10 / zoomScale,
+                                    transform: 'translate(-50%, -50%)',
+                                    opacity: (hoveredVertex === i || draggedVertex === i || selectedVertices.has(i)) ? 1 : 0.5,
+                                    boxShadow: selectedVertices.has(i) ? '0 0 0 2px rgba(255,255,255,0.8), 0 0 10px rgba(0,0,0,0.2)' : 'none'
+                                }}
+                                onMouseEnter={() => setHoveredVertex(i)}
+                                onMouseLeave={() => setHoveredVertex(null)}
+                                onMouseDown={(e) => handleVertexDown(e, i)}
+                            />
+                        ))}
                     </div>
-                </div>
-
-                {showSunWarning && (
-                    <div className="absolute top-1 left-1 text-orange-500 bg-white/80 rounded-full p-0.5 shadow-sm" title="West Facing (Hot Afternoon Sun)">
-                        <Sun size={12} fill="currentColor" />
-                    </div>
-                )}
-                
-                {showTools && (
-                    <div 
-                        className="bubble-tools absolute top-0 left-1/2 -translate-y-full -mt-2 flex flex-col gap-1 bg-white border border-slate-200 p-1 rounded-md shadow-lg z-50 pointer-events-auto"
-                        style={{ transform: `translateX(-50%) scale(${1/zoomScale})`, transformOrigin: 'bottom center' }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                    >
-                        <button 
-                            onClick={() => { toggleEditMode(); setShowTools(false); }}
-                            className={`p-1.5 hover:bg-slate-100 rounded text-slate-600 flex items-center gap-2 whitespace-nowrap text-[10px] font-medium ${isEditingOutline ? 'bg-blue-50 text-blue-600' : ''}`}
-                        >
-                            <LandPlot size={12} /> {isEditingOutline ? 'Finish Editing Outline' : 'Modify Outline'}
-                        </button>
-                        <div className="h-px bg-slate-100 my-0.5" />
-                        <button onClick={() => onFloorChange(room.id, 1)} className="p-1.5 hover:bg-slate-100 rounded text-slate-600 flex items-center gap-2 whitespace-nowrap text-[10px] font-medium">
-                            <ArrowUpFromLine size={12} /> Move Up Floor
-                        </button>
-                        <button onClick={() => onFloorChange(room.id, -1)} className="p-1.5 hover:bg-slate-100 rounded text-slate-600 flex items-center gap-2 whitespace-nowrap text-[10px] font-medium">
-                            <ArrowDownToLine size={12} /> Move Down Floor
-                        </button>
-                        <div className="h-px bg-slate-100 my-0.5" />
-                        {isConnectionSource ? (
-                             <button onClick={() => { onConnectionStart(room.id); setShowTools(false); }} className="p-1.5 hover:bg-red-50 text-red-600 rounded flex items-center gap-2 whitespace-nowrap text-[10px] font-medium"><Ban size={12} /> Cancel Connect</button>
-                        ) : (
-                             <button onClick={() => { onConnectionStart(room.id); setShowTools(false); }} className="p-1.5 hover:bg-slate-100 rounded text-slate-600 flex items-center gap-2 whitespace-nowrap text-[10px] font-medium"><LinkIcon size={12} /> Connect</button>
-                        )}
-                    </div>
-                )}
-            </div>
-        )}
-
-        {is3D && !isCustomShape && (
-            <>
-                <div className={`absolute inset-0 flex flex-col items-center justify-center border-2 ${visualStyle.bg} ${visualStyle.border} ${visualStyle.text}`} 
-                     style={{ transform: `translateZ(${zHeight}px)`, width: room.width, height: room.height }}>
-                    <span className="font-bold text-[10px] leading-tight select-none truncate px-1">{room.name}</span>
-                </div>
-                <div className={`absolute bottom-0 left-0 w-full ${darken(visualStyle.bg)} border-b border-l border-r border-slate-400 opacity-80`}
-                     style={{ width: room.width, height: zHeight, transformOrigin: 'bottom', transform: 'rotateX(-90deg)' }} />
-                <div className={`absolute top-0 right-0 h-full ${darken(visualStyle.bg)} border-t border-b border-r border-slate-400 opacity-60`}
-                     style={{ width: zHeight, height: room.height, transformOrigin: 'right', transform: 'rotateY(90deg)' }} />
-                <div className={`absolute top-0 left-0 h-full ${darken(visualStyle.bg)} border-t border-b border-l border-slate-400 opacity-60`}
-                     style={{ width: zHeight, height: room.height, transformOrigin: 'left', transform: 'rotateY(-90deg)' }} />
-                <div className={`absolute top-0 left-0 w-full ${darken(visualStyle.bg)} border-t border-l border-r border-slate-400 opacity-80`}
-                     style={{ width: room.width, height: zHeight, transformOrigin: 'top', transform: 'rotateX(90deg)' }} />
-            </>
-        )}
-        {is3D && isCustomShape && (
-             <div style={{ transform: `translateZ(${zHeight}px)` }}>
-                 <svg className="overflow-visible">
-                    <path 
-                        d={polygonPath}
-                        className={`${visualStyle.bg.replace('bg-', 'fill-')} ${visualStyle.border.replace('border-', 'stroke-')}`}
-                        fillOpacity={0.9}
-                        strokeWidth={1}
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
+                ) : (
+                    <div
+                        className={`absolute top-0 left-0 ${diagramStyle.cornerRadius} ${visualStyle.bg} ${visualStyle.border} ${diagramStyle.shadow} transition-all`}
+                        style={{ width: room.width, height: room.height, borderWidth: diagramStyle.borderWidth / zoomScale, opacity: diagramStyle.opacity }}
                     />
-                    <text x={room.width/2} y={room.height/2} textAnchor="middle" fontSize={10} className="fill-black font-bold">{room.name}</text>
-                </svg>
-             </div>
-        )}
-    </div>
-  );
+                )}
+
+                {/* Handles - RESIZE ONLY SE */}
+                {!room.polygon && isSelected && !isDragging && (
+                    <RenderCorner cursor="se-resize" pos={{ top: '100%', left: '100%' }} />
+                )}
+
+                {/* Content */}
+                <div
+                    className="absolute top-0 left-0 flex flex-col items-center justify-center pointer-events-none"
+                    style={{ width: room.width, height: room.height }}
+                >
+                    <div style={{ transform: `scale(${1 / zoomScale})` }} className={`flex flex-col items-center p-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily}`}>
+                        <span className="font-bold text-xs whitespace-nowrap">{room.name}</span>
+                        <span className="text-[10px] opacity-60 font-mono">{room.area}m²</span>
+                    </div>
+                </div>
+
+                {/* Mini Toolset */}
+                <div className={`absolute top-0 right-0 -mr-8 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'}`}>
+                    <button onClick={(e) => { e.stopPropagation(); setShowTools(!showTools); }} className="p-1 bg-white border border-slate-200 rounded-full shadow-sm hover:text-primary">
+                        {showTools ? <X size={12} /> : <Pencil size={12} />}
+                    </button>
+                    {showTools && (
+                        <div className="absolute top-8 right-0 bg-white shadow-2xl rounded-xl border border-slate-200 flex flex-col p-1 z-50 min-w-[140px] slide-in-bottom">
+                            {room.polygon ? (
+                                <button onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Convert to Bubble
+                                    // Calculate area to maintain size
+                                    // Area = width * height (approx)
+                                    // We have room.area (m2).
+                                    // W = sqrt(area * 400) (since 20px/m, 400px2/m2)
+                                    const side = Math.sqrt(room.area * 400);
+                                    updateRoom(room.id, { polygon: null, width: side, height: side });
+                                    setShowTools(false);
+                                }} className="p-2.5 hover:bg-slate-50 text-[10px] font-bold flex items-center gap-3 whitespace-nowrap text-slate-600 rounded-lg transition-colors">
+                                    <Box size={14} className="text-primary" /> Convert to Bubble
+                                </button>
+                            ) : (
+                                <button onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateRoom(room.id, { polygon: activePoints });
+                                    setShowTools(false);
+                                }} className="p-2.5 hover:bg-slate-50 text-[10px] font-bold flex items-center gap-3 whitespace-nowrap text-slate-600 rounded-lg transition-colors">
+                                    <LandPlot size={14} className="text-primary" /> Convert to Polygon
+                                </button>
+                            )}
+
+                            <button onClick={() => onLinkToggle?.(room.id)} className={`p-2.5 hover:bg-slate-50 text-[10px] font-bold flex items-center gap-3 whitespace-nowrap rounded-lg transition-colors ${isLinkingSource ? 'text-yellow-600 bg-yellow-50' : 'text-slate-600'}`}>
+                                <LinkIcon size={14} className={isLinkingSource ? 'text-yellow-500' : 'text-primary'} />
+                                {isLinkingSource ? 'Cancel Linking' : 'Link Logic'}
+                            </button>
+                            <div className="h-px bg-slate-100 my-1 mx-1" />
+                            <div className="flex justify-between px-1">
+                                <button onClick={(e) => { e.stopPropagation(); const idx = FLOORS.findIndex(f => f.id === room.floor); if (idx < FLOORS.length - 1) updateRoom(room.id, { floor: FLOORS[idx + 1].id }); }} className="p-2 hover:bg-slate-50 text-slate-400 hover:text-primary rounded-lg" title="Level Up"><ArrowUpFromLine size={14} /></button>
+                                <button onClick={(e) => { e.stopPropagation(); const idx = FLOORS.findIndex(f => f.id === room.floor); if (idx > 0) updateRoom(room.id, { floor: FLOORS[idx - 1].id }); }} className="p-2 hover:bg-slate-50 text-slate-400 hover:text-primary rounded-lg" title="Level Down"><ArrowDownToLine size={14} /></button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 };
 
 export const Bubble = React.memo(BubbleComponent);

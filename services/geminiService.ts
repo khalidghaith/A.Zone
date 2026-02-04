@@ -1,9 +1,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResponse } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+export const analyzeProgram = async (programText: string, apiKey: string): Promise<AnalysisResponse> => {
+  if (!apiKey || apiKey === 'your_api_key_here') {
+    throw new Error("Gemini API Key is missing. Please provide a key in the settings.");
+  }
 
-export const analyzeProgram = async (programText: string): Promise<AnalysisResponse> => {
+  const ai = new GoogleGenAI({ apiKey });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",

@@ -1,0 +1,45 @@
+/* Base Styles for A.Zone - Pure CSS only as we use Tailwind CDN */
+body {
+    background-color: #f8fafc;
+    /* canvas color */
+    color: #0f172a;
+    /* slate-900 */
+}
+
+.canvas-viewport {
+    cursor: grab;
+}
+
+.canvas-viewport:active {
+    cursor: grabbing;
+}
+
+.bubble-transition {
+    transition: width 0.1s, height 0.1s, transform 0.1s;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.grid-pattern {
+    background-size: 40px 40px;
+    background-image:
+        linear-gradient(to right, #e2e8f0 1px, transparent 1px),
+        linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
+}

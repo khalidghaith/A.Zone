@@ -1,42 +1,31 @@
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export interface Room {
   id: string;
   name: string;
   area: number; // in square meters
   zone: string;
   description?: string;
-  
-  // Visual/Placement state
+
+  // Placement
   isPlaced: boolean;
-  floor: number; // 0 = Ground, 1 = L1, etc.
+  floor: number;
   x: number;
   y: number;
   width: number;
   height: number;
-  color: string;
-  
-  // Custom Shape State
-  polygon?: Point[]; // Local coordinates relative to x, y
+
+  // Custom Shape
+  polygon?: Point[];
 }
 
 export interface ZoneColor {
   bg: string;
   border: string;
   text: string;
-}
-
-export interface AnalysisResponse {
-  projectName: string;
-  spaces: Array<{
-    name: string;
-    area: number;
-    zone: string;
-    description: string;
-  }>;
-}
-
-export interface Point {
-  x: number;
-  y: number;
 }
 
 export interface Connection {
@@ -49,12 +38,22 @@ export interface DiagramStyle {
   id: string;
   name: string;
   fontFamily: string;
-  cornerRadius: string; 
+  cornerRadius: string;
   borderWidth: number;
   opacity: number;
   sketchy: boolean;
   shadow: string;
   colorMode: 'default' | 'monochrome' | 'pastel';
+}
+
+export interface AnalysisResponse {
+  projectName: string;
+  spaces: Array<{
+    name: string;
+    area: number;
+    zone: string;
+    description: string;
+  }>;
 }
 
 export const ZONE_COLORS: Record<string, ZoneColor> = {
@@ -63,6 +62,7 @@ export const ZONE_COLORS: Record<string, ZoneColor> = {
   'Service': { bg: 'bg-gray-200', border: 'border-gray-400', text: 'text-gray-900' },
   'Circulation': { bg: 'bg-yellow-100', border: 'border-yellow-400', text: 'text-yellow-900' },
   'Outdoor': { bg: 'bg-green-100', border: 'border-green-400', text: 'text-green-900' },
+  'Admin': { bg: 'bg-purple-100', border: 'border-purple-400', text: 'text-purple-900' },
   'Default': { bg: 'bg-white', border: 'border-slate-300', text: 'text-slate-700' },
 };
 
@@ -93,8 +93,7 @@ export const DIAGRAM_STYLES: DiagramStyle[] = [
     id: 'sketchy',
     name: 'Sketchy',
     fontFamily: 'font-mono',
-    // Complex border radius for hand-drawn effect
-    cornerRadius: 'rounded-[255px_15px_225px_15px/15px_225px_15px_255px]', 
+    cornerRadius: 'rounded-[255px_15px_225px_15px/15px_225px_15px_255px]',
     borderWidth: 2,
     opacity: 0.9,
     sketchy: true,

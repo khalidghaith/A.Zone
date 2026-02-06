@@ -1,15 +1,17 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { Room, FLOORS, Connection, DIAGRAM_STYLES, DiagramStyle, Point, ZONE_COLORS } from './types';
+import { Room, FLOORS, Connection, DIAGRAM_STYLES, DiagramStyle, Point, ZONE_COLORS, AppSettings } from './types';
 import { ProgramEditor } from './components/ProgramEditor';
 import { Bubble } from './components/Bubble';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { ZoneOverlay } from './components/ZoneOverlay'; // Newly added
+import { ExportModal } from './components/ExportModal';
+import { SettingsModal } from './components/SettingsModal';
 import { applyMagneticPhysics } from './utils/physics'; // Newly added
-import { downloadDXF } from './utils/dxf';
+import { handleExport } from './utils/exportSystem';
 import {
     Plus, Layers, Map as MapIcon, Box, Download, Settings2,
-    TableProperties, LayoutPanelLeft, MousePointer2, Link,
-    LandPlot, Undo2, ChevronRight, ChevronLeft, SlidersHorizontal, Palette, Trash2, Key, X,
+    TableProperties,
+    LandPlot, ChevronRight, ChevronLeft, Trash2, Key, X, Settings,
     Zap, Magnet, Grid, Ruler, Moon, Sun, Maximize, ChevronUp, ChevronDown, Activity
 } from 'lucide-react';
 
@@ -33,6 +35,20 @@ export default function App() {
     // API Key State
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('A_ZONE_GEMINI_KEY') || import.meta.env.VITE_GEMINI_API_KEY || "");
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+    const [appSettings, setAppSettings] = useState<AppSettings>({
+        zoneTransparency: 0.5,
+        zonePadding: 10,
+        strokeWidth: 2,
+        cornerRadius: 12,
+        fontSize: 12,
+        snapTolerance: 10,
+        snapToGrid: true,
+        snapToObjects: true,
+        snapWhileScaling: false
+    });
 
     // View State
     const [floors, setFloors] = useState(FLOORS);
@@ -86,7 +102,7 @@ export default function App() {
             setSnapGuides(null);
             return { x: room.x, y: room.y };
         }
-        const threshold = 10;
+        const threshold = appSettings.snapTolerance;
         let snappedX = room.x;
         let snappedY = room.y;
         let activeGuideX: number | undefined;
@@ -94,43 +110,50 @@ export default function App() {
 
         const otherRooms = rooms.filter(r => r.isPlaced && r.id !== excludeId && r.floor === currentFloor);
 
-        for (const other of otherRooms) {
-            // Horizontal Snapping
-            const snapsH = [
-                { val: other.x, type: 'left-left' },
-                { val: other.x + other.width, type: 'left-right' },
-                { val: other.x - room.width, type: 'right-left' },
-                { val: other.x + other.width - room.width, type: 'right-right' }
-            ];
+        if (appSettings.snapToObjects) {
+            for (const other of otherRooms) {
+                // Horizontal Snapping
+                const snapsH = [
+                    { val: other.x, type: 'left-left' },
+                    { val: other.x + other.width, type: 'left-right' },
+                    { val: other.x - room.width, type: 'right-left' },
+                    { val: other.x + other.width - room.width, type: 'right-right' }
+                ];
 
-            for (const s of snapsH) {
-                if (Math.abs(room.x - s.val) < threshold) {
-                    snappedX = s.val;
-                    activeGuideX = s.val + (s.type.startsWith('right') ? room.width : 0);
-                    break;
+                for (const s of snapsH) {
+                    if (Math.abs(room.x - s.val) < threshold) {
+                        snappedX = s.val;
+                        activeGuideX = s.val + (s.type.startsWith('right') ? room.width : 0);
+                        break;
+                    }
                 }
-            }
 
-            // Vertical Snapping
-            const snapsV = [
-                { val: other.y, type: 'top-top' },
-                { val: other.y + other.height, type: 'top-bottom' },
-                { val: other.y - room.height, type: 'bottom-top' },
-                { val: other.y + other.height - room.height, type: 'bottom-bottom' }
-            ];
+                // Vertical Snapping
+                const snapsV = [
+                    { val: other.y, type: 'top-top' },
+                    { val: other.y + other.height, type: 'top-bottom' },
+                    { val: other.y - room.height, type: 'bottom-top' },
+                    { val: other.y + other.height - room.height, type: 'bottom-bottom' }
+                ];
 
-            for (const s of snapsV) {
-                if (Math.abs(room.y - s.val) < threshold) {
-                    snappedY = s.val;
-                    activeGuideY = s.val + (s.type.startsWith('bottom') ? room.height : 0);
-                    break;
+                for (const s of snapsV) {
+                    if (Math.abs(room.y - s.val) < threshold) {
+                        snappedY = s.val;
+                        activeGuideY = s.val + (s.type.startsWith('bottom') ? room.height : 0);
+                        break;
+                    }
                 }
             }
         }
 
+        if (appSettings.snapToGrid && !activeGuideX && !activeGuideY) {
+            // Fallback to grid snapping if no object snap
+            // (Already handled by snapPixelUnit in Bubble, but for whole room drag we might want it here too if we want grid snap)
+        }
+
         setSnapGuides(activeGuideX || activeGuideY ? { x: activeGuideX, y: activeGuideY } : null);
         return { x: snappedX, y: snappedY };
-    }, [rooms, currentFloor, snapEnabled]);
+    }, [rooms, currentFloor, snapEnabled, appSettings]);
 
     // Canvas Refs
     const mainRef = useRef<HTMLElement>(null);
@@ -464,6 +487,27 @@ export default function App() {
                             <p className="text-[9px] font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest">Architectural Project</p>
                         </div>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setDarkMode(!darkMode)}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${!darkMode ? 'text-slate-400 hover:text-amber-500 hover:bg-amber-50' : 'text-slate-400 hover:text-indigo-400 hover:bg-white/5'}`}
+                            title="Toggle Dark Mode"
+                        >
+                            {darkMode ? <Moon size={16} /> : <Sun size={16} />}
+                        </button>
+                        <button
+                            onClick={() => setShowApiKeyModal(true)}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${apiKey ? 'text-slate-400 hover:text-primary hover:bg-blue-50' : 'text-orange-500 bg-orange-50 animate-pulse border border-orange-200 shadow-lg shadow-orange-100'}`}
+                            title="Gemini API Key Settings"
+                        >
+                            <Key size={16} />
+                        </button>
+                        <button onClick={() => setShowSettingsModal(true)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-white/5 transition-all" title="Settings">
+                            <Settings size={16} />
+                        </button>
+                    </div>
+
                     <div className="h-8 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
                     
                     {/* Workspace Toggle */}
@@ -498,37 +542,9 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => setDarkMode(!darkMode)}
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${!darkMode ? 'text-slate-400 hover:text-amber-500 hover:bg-amber-50' : 'text-slate-400 hover:text-indigo-400 hover:bg-white/5'}`}
-                        title="Toggle Dark Mode"
-                    >
-                        {darkMode ? <Moon size={18} /> : <Sun size={18} />}
-                    </button>
-                    <button
-                        onClick={() => setShowApiKeyModal(true)}
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${apiKey ? 'text-slate-400 hover:text-primary hover:bg-blue-50' : 'text-orange-500 bg-orange-50 animate-pulse border border-orange-200 shadow-lg shadow-orange-100'}`}
-                        title="Gemini API Key Settings"
-                    >
-                        <Key size={18} />
-                    </button>
-
                     {viewMode === 'CANVAS' && (
                         <>
                             <div className="w-px h-8 bg-slate-200/60 mx-1" />
-
-                            <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-xl p-1 border border-slate-200/50 dark:border-dark-border">
-                                {DIAGRAM_STYLES.map(s => (
-                                    <button
-                                        key={s.id}
-                                        onClick={() => setCurrentStyle(s)}
-                                        title={s.name}
-                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${currentStyle.id === s.id ? 'bg-white dark:bg-dark-surface text-primary shadow-md' : 'text-slate-400 dark:text-gray-500 hover:text-slate-600 dark:hover:text-gray-300 hover:bg-white/50 dark:hover:bg-white/10'}`}
-                                    >
-                                        {s.id === 'standard' ? <LayoutPanelLeft size={16} /> : s.id === 'minimal' ? <MousePointer2 size={16} /> : s.id === 'sketchy' ? <Palette size={16} /> : <SlidersHorizontal size={16} />}
-                                    </button>
-                                ))}
-                            </div>
 
                             <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-xl p-1 border border-slate-200/50 dark:border-dark-border">
                                 <button
@@ -556,17 +572,10 @@ export default function App() {
                             </button>
 
                             <button
-                                onClick={() => setIs3DMode(!is3DMode)}
-                                className={`h-10 px-5 rounded-xl text-[10px] font-black uppercase tracking-widest border flex items-center gap-2.5 transition-all duration-300 ${is3DMode ? 'bg-primary border-primary text-white shadow-xl shadow-blue-200' : 'bg-white dark:bg-dark-surface border-slate-200 dark:border-dark-border text-slate-600 dark:text-gray-400 hover:border-primary hover:text-primary shadow-sm hover:shadow-md'}`}
-                            >
-                                <Box size={16} /> 3D Perspective
-                            </button>
-
-                            <button
-                                onClick={() => downloadDXF(projectName, rooms)}
+                                onClick={() => setShowExportModal(true)}
                                 className="h-10 px-6 bg-slate-900 dark:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all duration-500 flex items-center gap-2.5 group"
                             >
-                                <Download size={16} className="group-hover:-translate-y-0.5 transition-transform" /> Export CAD
+                                <Download size={16} className="group-hover:-translate-y-0.5 transition-transform" /> Export
                             </button>
                         </>
                     )}
@@ -677,6 +686,7 @@ export default function App() {
                                     onSelectZone={handleZoneClick}
                                     onDragStart={() => setIsZoneDragging(true)}
                                     onDragEnd={() => setIsZoneDragging(false)}
+                                    appSettings={appSettings}
                                 />
                             </div>
 
@@ -763,9 +773,10 @@ export default function App() {
                                         }}
                                         diagramStyle={currentStyle}
                                         snapEnabled={snapEnabled}
-                                        snapPixelUnit={gridSize * PIXELS_PER_METER}
+                                        snapPixelUnit={appSettings.snapToGrid ? gridSize * PIXELS_PER_METER : 1}
                                         pixelsPerMeter={PIXELS_PER_METER}
                                         floors={floors}
+                                        appSettings={appSettings}
                                     />
                                 ))}
                             </div>
@@ -949,6 +960,24 @@ export default function App() {
                     onSave={handleSaveApiKey}
                     onClose={() => setShowApiKeyModal(false)}
                     currentKey={apiKey}
+                />
+            )}
+
+            {showExportModal && (
+                <ExportModal
+                    onClose={() => setShowExportModal(false)}
+                    onExport={(format) => {
+                        handleExport(format, projectName, rooms, connections, currentFloor, darkMode);
+                        setShowExportModal(false);
+                    }}
+                />
+            )}
+
+            {showSettingsModal && (
+                <SettingsModal
+                    settings={appSettings}
+                    onUpdate={setAppSettings}
+                    onClose={() => setShowSettingsModal(false)}
                 />
             )}
         </div>

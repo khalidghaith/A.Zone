@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Room, ZONE_COLORS, Point } from '../types';
+import { Room, ZONE_COLORS, Point, AppSettings } from '../types';
 import { getConvexHull, createRoundedPath } from '../utils/geometry';
 
 interface ZoneOverlayProps {
@@ -10,18 +10,17 @@ interface ZoneOverlayProps {
     onSelectZone?: (zone: string) => void;
     onDragStart?: () => void;
     onDragEnd?: () => void;
+    appSettings: AppSettings;
 }
 
-export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, scale, onZoneDrag, onSelectZone, onDragStart, onDragEnd }) => {
+export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, scale, onZoneDrag, onSelectZone, onDragStart, onDragEnd, appSettings }) => {
     const [draggedZone, setDraggedZone] = useState<string | null>(null);
     const lastMousePos = useRef<{ x: number, y: number } | null>(null);
 
     const zonePaths = useMemo(() => {
         const zones: Record<string, Point[]> = {};
-        // User requested padding same as stroke width. 
-        // Bubble stroke is typically 2-4px (screen).
-        // Since we are inside a scaled container, we need to divide by scale to get screen-constant world units.
-        const padding = 4 / scale;
+        const padding = appSettings.zonePadding / scale;
+        const cornerRadius = appSettings.cornerRadius / scale;
 
         // Group points by zone
         rooms.filter(r => r.isPlaced && r.floor === currentFloor).forEach(r => {
@@ -58,7 +57,7 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
 
             // Use createRoundedPath to get rounded corners "like the bubbles"
             // Bubbles use rounded-xl ~ 12px.
-            const d = createRoundedPath(hull, 12);
+            const d = createRoundedPath(hull, cornerRadius + padding);
 
             return {
                 zone,
@@ -66,7 +65,7 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
                 color: ZONE_COLORS[zone] || ZONE_COLORS['Default']
             };
         }).filter(Boolean);
-    }, [rooms, currentFloor, scale]);
+    }, [rooms, currentFloor, scale, appSettings.cornerRadius, appSettings.zonePadding]);
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
@@ -111,15 +110,17 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
                     <path
                         d={z.path}
                         className={`${z.color.border.replace('border-', 'stroke-')} opacity-60 transition-colors`}
-                        strokeWidth={4 / scale}
+                        strokeWidth={appSettings.strokeWidth / scale}
                         strokeLinejoin="round"
                         strokeLinecap="round"
                         strokeDasharray={`${10 / scale}, ${10 / scale}`}
+                        fill="none"
                     />
                     {/* Interactive Fill */}
                     <path
                         d={z.path}
-                        className={`${z.color.bg.replace('bg-', 'fill-')} opacity-20 hover:opacity-30 cursor-grab active:cursor-grabbing pointer-events-auto transition-colors`}
+                        className={`${z.color.bg.replace('bg-', 'fill-')} hover:opacity-60 cursor-grab active:cursor-grabbing pointer-events-auto transition-colors`}
+                        style={{ fillOpacity: appSettings.zoneTransparency }}
                         stroke="none"
                         onMouseDown={(e) => handleZoneMouseDown(e, z.zone)}
                     />

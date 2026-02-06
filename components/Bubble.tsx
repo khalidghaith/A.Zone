@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Room, ZONE_COLORS, Point, DiagramStyle } from '../types';
+import { Room, ZONE_COLORS, Point, DiagramStyle, AppSettings } from '../types';
 import { Pencil, X, LandPlot, Link as LinkIcon, ArrowUpFromLine, ArrowDownToLine, Box } from 'lucide-react';
 import { createRoundedPath } from '../utils/geometry';
 
@@ -17,6 +17,7 @@ interface BubbleProps {
     isLinkingSource?: boolean;
     pixelsPerMeter: number;
     floors: { id: number; label: string }[];
+    appSettings: AppSettings;
 }
 
 // area utility
@@ -32,7 +33,7 @@ const calculatePolygonArea = (points: Point[]): number => {
 
 const BubbleComponent: React.FC<BubbleProps> = ({
     room, zoomScale, updateRoom, isSelected, onSelect, diagramStyle, snapEnabled, snapPixelUnit,
-    getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors
+    getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors, appSettings
 }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [resizeHandle, setResizeHandle] = useState<string | null>(null);
@@ -64,7 +65,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         { x: 0, y: 0 }, { x: room.width, y: 0 }, { x: room.width, y: room.height }, { x: 0, y: room.height }
     ], [room.polygon, room.width, room.height]);
 
-    const polygonPath = useMemo(() => createRoundedPath(activePoints, 8), [activePoints]);
+    const polygonPath = useMemo(() => createRoundedPath(activePoints, appSettings.cornerRadius), [activePoints, appSettings.cornerRadius]);
 
     const snap = (val: number) => {
         if (!snapEnabled) return val;
@@ -108,8 +109,23 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                 if (resizeHandle === 'se') {
                     const areaPx = s.roomW * s.roomH;
-                    const targetW = Math.max(minSize, s.roomW + dxWorld);
-                    const targetH = Math.max(minSize, s.roomH + dyWorld);
+                    let targetW = Math.max(minSize, s.roomW + dxWorld);
+                    let targetH = Math.max(minSize, s.roomH + dyWorld);
+
+                    if (snapEnabled && appSettings.snapWhileScaling) {
+                        // Try to snap the bottom-right corner
+                        // We construct a dummy room representing the new bottom-right corner to use getSnappedPosition
+                        // This is a bit hacky but reuses the logic.
+                        // We want to snap the point (roomX + targetW, roomY + targetH)
+                        if (getSnappedPosition) {
+                            const currentRight = s.roomX + targetW;
+                            const currentBottom = s.roomY + targetH;
+                            const snapped = getSnappedPosition({ ...room, x: currentRight, y: currentBottom, width: 0, height: 0 }, room.id);
+                            targetW = Math.max(minSize, snapped.x - s.roomX);
+                            targetH = Math.max(minSize, snapped.y - s.roomY);
+                        }
+                    }
+
                     const ratio = targetW / targetH;
                     nW = Math.sqrt(areaPx * ratio);
                     nH = areaPx / nW;
@@ -231,7 +247,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices]); // Added selectedVertices dependency
+    }, [isDragging, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition]);
 
     const handleResizeStart = (e: React.MouseEvent, handle: string) => {
         e.stopPropagation();
@@ -427,7 +443,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                             <path
                                 d={polygonPath}
                                 className={`${visualStyle.bg.replace('bg-', 'fill-')} ${visualStyle.border.replace('border-', 'stroke-')}`}
-                                strokeWidth={diagramStyle.borderWidth / zoomScale}
+                                strokeWidth={appSettings.strokeWidth / zoomScale}
                                 strokeDasharray={diagramStyle.sketchy ? `${10 / zoomScale},${10 / zoomScale}` : "none"}
                                 fillOpacity={diagramStyle.opacity}
                                 style={{
@@ -474,7 +490,12 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 ) : (
                     <div
                         className={`absolute top-0 left-0 ${diagramStyle.cornerRadius} ${visualStyle.bg} ${visualStyle.border} ${diagramStyle.shadow} ${isInteracting ? '' : 'transition-all'}`}
-                        style={{ width: room.width, height: room.height, borderWidth: diagramStyle.borderWidth / zoomScale, opacity: diagramStyle.opacity }}
+                        style={{ 
+                            width: room.width, height: room.height, 
+                            borderWidth: appSettings.strokeWidth / zoomScale, 
+                            opacity: diagramStyle.opacity,
+                            borderRadius: appSettings.cornerRadius / zoomScale
+                        }}
                     />
                 )}
 
@@ -500,7 +521,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     className="absolute top-0 left-0 flex flex-col items-center justify-center pointer-events-none"
                     style={{ width: room.width, height: room.height }}
                 >
-                    <div style={{ transform: `scale(${1 / zoomScale})` }} className={`flex flex-col items-center p-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily}`}>
+                    <div style={{ transform: `scale(${1 / zoomScale})`, fontSize: appSettings.fontSize }} className={`flex flex-col items-center p-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily}`}>
                         <span className="font-bold text-xs whitespace-nowrap">{room.name}</span>
                         <span className="text-[10px] opacity-60 font-mono">{room.area}m²</span>
                     </div>

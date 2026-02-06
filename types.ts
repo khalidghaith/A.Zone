@@ -121,3 +121,15 @@ export const FLOORS = [
   { id: 3, label: 'Level 3' },
   { id: 4, label: 'Roof' },
 ];
+
+export interface AppSettings {
+  zoneTransparency: number;
+  zonePadding: number;
+  strokeWidth: number;
+  cornerRadius: number;
+  fontSize: number;
+  snapTolerance: number;
+  snapToGrid: boolean;
+  snapToObjects: boolean;
+  snapWhileScaling: boolean;
+}

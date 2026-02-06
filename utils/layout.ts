@@ -1,12 +1,12 @@
 import { Room } from '../types';
 
 export const arrangeRooms = (rooms: Room[], currentFloor: number, spacing: number = 20): Room[] => {
-    const currentFloorRooms = rooms.filter(r => r.isPlaced && r.floor === currentFloor);
+    const roomsToArrange = rooms.filter(r => !r.isPlaced || r.floor === currentFloor);
     
-    if (currentFloorRooms.length === 0) return rooms;
+    if (roomsToArrange.length === 0) return rooms;
 
     // Sort by zone then area (descending)
-    const sortedRooms = [...currentFloorRooms].sort((a, b) => {
+    const sortedRooms = [...roomsToArrange].sort((a, b) => {
         if (a.zone !== b.zone) return a.zone.localeCompare(b.zone);
         return b.area - a.area;
     });
@@ -69,7 +69,7 @@ export const arrangeRooms = (rooms: Room[], currentFloor: number, spacing: numbe
 
         placedRects.push({ x: bestX, y: bestY, w: width, h: height });
         // Adjust room position so its bounding box is at bestX, bestY
-        newPlacedRooms.push({ ...room, x: bestX - offsetX, y: bestY - offsetY });
+        newPlacedRooms.push({ ...room, x: bestX - offsetX, y: bestY - offsetY, isPlaced: true, floor: currentFloor });
     });
 
     return rooms.map(r => {

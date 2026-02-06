@@ -8,11 +8,11 @@ import { ExportModal } from './components/ExportModal';
 import { SettingsModal } from './components/SettingsModal';
 import { applyMagneticPhysics } from './utils/physics'; // Newly added
 import { handleExport } from './utils/exportSystem';
-import { generateAiLayout } from './utils/aiLayout';
+import { arrangeRooms } from './utils/layout';
 import {
     Plus, Layers, Map as MapIcon, Box, Download, Settings2,
     TableProperties,
-    LandPlot, ChevronRight, ChevronLeft, Trash2, Key, X, Settings, LayoutTemplate, Loader2,
+    LandPlot, ChevronRight, ChevronLeft, Trash2, Key, X, Settings, LayoutTemplate,
     Zap, Magnet, Grid, Ruler, Moon, Sun, Maximize, ChevronUp, ChevronDown, Activity
 } from 'lucide-react';
 
@@ -75,7 +75,6 @@ export default function App() {
     const [snapGuides, setSnapGuides] = useState<{ x?: number, y?: number } | null>(null);
     const [isZoneDragging, setIsZoneDragging] = useState(false);
     const [editingFloorId, setEditingFloorId] = useState<number | null>(null);
-    const [isAiLayoutLoading, setIsAiLayoutLoading] = useState(false);
 
     // Dark Mode Local State
     const [darkMode, setDarkMode] = useState(() => {
@@ -369,35 +368,15 @@ export default function App() {
         setZoneColors(prev => ({ ...prev, [name]: randomStyle }));
     };
 
-    const handleAutoArrange = async () => {
-        if (!apiKey) {
-            setShowApiKeyModal(true);
-            return;
-        }
+    const handleAutoArrange = () => {
+        setRooms(prev => arrangeRooms(prev, currentFloor));
+    };
 
-        const roomsToArrange = rooms.filter(r => !r.isPlaced || r.floor === currentFloor);
-        if (roomsToArrange.length === 0) return;
-
-        setIsAiLayoutLoading(true);
-        try {
-            const layout = await generateAiLayout(roomsToArrange, apiKey);
-            setRooms(prev => prev.map(r => {
-                if (layout[r.id]) {
-                    return {
-                        ...r,
-                        x: layout[r.id].x,
-                        y: layout[r.id].y,
-                        isPlaced: true,
-                        floor: currentFloor
-                    };
-                }
-                return r;
-            }));
-        } catch (error) {
-            console.error("Layout generation failed", error);
-            alert("Failed to generate layout. Please check your API key.");
-        } finally {
-            setIsAiLayoutLoading(false);
+    const handleClearCanvas = () => {
+        if (window.confirm("Are you sure you want to clear the canvas and return all spaces to the inventory?")) {
+            setRooms(prev => prev.map(r => ({ ...r, isPlaced: false })));
+            setSelectedRoomIds(new Set());
+            setSelectedZone(null);
         }
     };
 
@@ -622,11 +601,18 @@ export default function App() {
 
                             <button
                                 onClick={handleAutoArrange}
-                                disabled={isAiLayoutLoading}
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${isAiLayoutLoading ? 'bg-slate-100 dark:bg-white/10 cursor-wait' : 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5'}`}
-                                title="Auto Arrange Layout (AI)"
+                                className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5"
+                                title="Auto Arrange Layout"
                             >
-                                {isAiLayoutLoading ? <Loader2 size={18} className="animate-spin text-orange-600" /> : <LayoutTemplate size={18} />}
+                                <LayoutTemplate size={18} />
+                            </button>
+
+                            <button
+                                onClick={handleClearCanvas}
+                                className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500"
+                                title="Clear Canvas"
+                            >
+                                <Trash2 size={18} />
                             </button>
 
                             <button onClick={() => setSnapEnabled(!snapEnabled)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${!snapEnabled ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50'}`} title="Toggle Snapping"><Magnet size={18} /></button>
@@ -650,7 +636,7 @@ export default function App() {
                 </div>
             </header>
 
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex overflow-hidden relative">
                 {viewMode === 'EDITOR' ? (
                     <ProgramEditor
                         rooms={rooms}
@@ -1033,6 +1019,18 @@ export default function App() {
                             )}
                         </div>
                     </aside>
+                        )}
+
+                        {!isRightSidebarOpen && viewMode === 'CANVAS' && (
+                            <div className="absolute top-0 right-0 h-full flex items-center z-20 pointer-events-none">
+                                <button
+                                    onClick={() => setIsRightSidebarOpen(true)}
+                                    className="pointer-events-auto bg-white/70 dark:bg-dark-surface/70 backdrop-blur-sm py-4 px-1 rounded-l-lg border-l border-t border-b border-slate-200/50 dark:border-dark-border shadow-lg hover:bg-slate-50 dark:hover:bg-white/10 text-slate-400 hover:text-orange-600 transition-all"
+                                    title="Show Properties"
+                                >
+                                    <ChevronLeft size={18} />
+                                </button>
+                            </div>
                         )}
                     </>
                 )}

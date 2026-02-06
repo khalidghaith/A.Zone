@@ -34,6 +34,19 @@ const calculatePolygonArea = (points: Point[]): number => {
     return Math.abs(area) / 2;
 };
 
+const RenderCorner = ({ cursor, pos, zoomScale, onMouseDown }: { cursor: string, pos: React.CSSProperties, zoomScale: number, onMouseDown: (e: React.MouseEvent) => void }) => (
+    <div
+        className="absolute z-[70]"
+        style={{ ...pos, transform: `translate(-50%, -50%) scale(${1 / zoomScale})` }}
+    >
+        <div
+            className="w-3 h-3 bg-white border-2 border-orange-600 rounded-full hover:bg-orange-600 transition-all cursor-pointer shadow-lg active:scale-150"
+            style={{ cursor }}
+            onMouseDown={onMouseDown}
+        />
+    </div>
+);
+
 const BubbleComponent: React.FC<BubbleProps> = ({
     room, zoomScale, updateRoom, isSelected, onSelect, diagramStyle, snapEnabled, snapPixelUnit,
     getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors, appSettings, zoneColors, onDragEnd, onDragStart
@@ -64,7 +77,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     };
     const visualStyle = getZoneStyle(room.zone);
 
-    const activePoints = useMemo(() => room.polygon || [
+    const activePoints = useMemo(() => (room.polygon && room.polygon.length > 0) ? room.polygon : [
         { x: 0, y: 0 }, { x: room.width, y: 0 }, { x: room.width, y: room.height }, { x: 0, y: room.height }
     ], [room.polygon, room.width, room.height]);
 
@@ -418,19 +431,6 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         };
     };
 
-    const RenderCorner = ({ cursor, pos }: { cursor: string, pos: React.CSSProperties }) => (
-        <div
-            className="absolute z-[70]"
-            style={{ ...pos, transform: `translate(-50%, -50%) scale(${1 / zoomScale})` }}
-        >
-            <div
-                className="w-3 h-3 bg-white border-2 border-orange-600 rounded-full hover:bg-orange-600 transition-all cursor-pointer shadow-lg active:scale-150"
-                style={{ cursor }}
-                onMouseDown={(e) => handleResizeStart(e, cursor.replace('-resize', ''))}
-            />
-        </div>
-    );
-
     const isInteracting = isDragging || resizeHandle !== null || draggedVertex !== null || draggedEdge !== null;
 
     return (
@@ -511,7 +511,12 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                 {/* Handles - RESIZE ONLY SE */}
                 {!room.polygon && isSelected && !isDragging && (
-                    <RenderCorner cursor="se-resize" pos={{ top: '100%', left: '100%' }} />
+                    <RenderCorner 
+                        cursor="se-resize" 
+                        pos={{ top: '100%', left: '100%' }} 
+                        zoomScale={zoomScale}
+                        onMouseDown={(e) => handleResizeStart(e, 'se')}
+                    />
                 )}
 
                 {/* Dimensions Display during Resize */}
@@ -545,7 +550,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     className="absolute top-0 left-0 flex flex-col items-center justify-center pointer-events-none"
                     style={{ width: room.width, height: room.height }}
                 >
-                    <div style={{ transform: `scale(${1 / zoomScale})` }} className="relative flex flex-col items-center">
+                    <div className="relative flex flex-col items-center">
                         
                         {/* Edit Button - Centered above text */}
                         <div className={`mb-1 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'} pointer-events-auto`}>
@@ -586,9 +591,9 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                             )}
                         </div>
 
-                        <div style={{ fontSize: appSettings.fontSize }} className={`flex flex-col items-center p-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily}`}>
-                            <span className="font-bold text-xs whitespace-nowrap">{room.name}</span>
-                            <span className="text-[10px] opacity-60 font-mono">{room.area}m²</span>
+                        <div style={{ fontSize: appSettings.fontSize }} className={`flex flex-col items-center p-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily} leading-tight`}>
+                            <span className="font-bold whitespace-nowrap">{room.name}</span>
+                            <span className="text-[0.8em] opacity-70 font-sans">{room.area}m²</span>
                         </div>
                     </div>
                 </div>

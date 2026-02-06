@@ -1,13 +1,14 @@
 import React from 'react';
-import { X, Image, FileJson, FileType, Save } from 'lucide-react';
+import { X, Image, FileJson, FileType, Save, FileSpreadsheet } from 'lucide-react';
 import { ExportFormat } from '../utils/exportSystem';
 
 interface ExportModalProps {
-    onExport: (format: ExportFormat) => void;
+    onExport: (format: ExportFormat | 'csv') => void;
     onClose: () => void;
+    viewMode: 'EDITOR' | 'CANVAS';
 }
 
-export const ExportModal: React.FC<ExportModalProps> = ({ onExport, onClose }) => {
+export const ExportModal: React.FC<ExportModalProps> = ({ onExport, onClose, viewMode }) => {
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
             <div className="bg-white dark:bg-dark-surface w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-white/20 slide-in-bottom">

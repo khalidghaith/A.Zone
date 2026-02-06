@@ -92,7 +92,7 @@ export const DIAGRAM_STYLES: DiagramStyle[] = [
   {
     id: 'sketchy',
     name: 'Sketchy',
-    fontFamily: 'font-mono',
+    fontFamily: 'font-sans',
     cornerRadius: 'rounded-[255px_15px_225px_15px/15px_225px_15px_255px]',
     borderWidth: 2,
     opacity: 0.9,
@@ -103,7 +103,7 @@ export const DIAGRAM_STYLES: DiagramStyle[] = [
   {
     id: 'monochrome',
     name: 'Technical',
-    fontFamily: 'font-mono tracking-tight',
+    fontFamily: 'font-sans tracking-tight',
     cornerRadius: 'rounded-none',
     borderWidth: 1,
     opacity: 1,

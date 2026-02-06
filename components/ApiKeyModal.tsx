@@ -47,7 +47,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave, onClose, curre
                                     value={key}
                                     onChange={(e) => setKey(e.target.value)}
                                     placeholder="Paste your key here..."
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-sans focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                                 />
                                 {key.length > 20 && (
                                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
@@ -70,14 +70,14 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave, onClose, curre
                     <div className="mt-8 flex gap-3">
                         <button
                             onClick={onClose}
-                            className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-all"
+                            className="h-12 flex-1 text-slate-500 font-bold text-[10px] uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl transition-all"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={handleSave}
                             disabled={!key.trim() || isSaved}
-                            className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isSaved ? 'bg-green-500 text-white' : 'bg-primary text-white hover:bg-blue-600 shadow-xl shadow-blue-200 disabled:opacity-50'}`}
+                            className={`h-12 flex-1 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isSaved ? 'bg-green-500 text-white' : 'bg-primary text-white hover:bg-blue-600 shadow-xl shadow-blue-200 disabled:opacity-50'}`}
                         >
                             {isSaved ? <Check size={18} /> : null}
                             {isSaved ? 'Key Saved' : 'Save Key'}

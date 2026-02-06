@@ -25,7 +25,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdate
                 <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
                     {/* Visual Settings */}
                     <div className="space-y-4">
-                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Visuals</h3>
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Visuals</h3>
                         
                         <div className="space-y-2">
                             <div className="flex justify-between text-sm font-bold text-slate-700 dark:text-gray-300">
@@ -95,7 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdate
 
                     {/* Snapping Settings */}
                     <div className="space-y-4">
-                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Snapping & Interaction</h3>
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Snapping & Interaction</h3>
                         
                         <div className="space-y-2">
                             <div className="flex justify-between text-sm font-bold text-slate-700 dark:text-gray-300">

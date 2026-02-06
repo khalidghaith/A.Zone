@@ -12,7 +12,7 @@ import { arrangeRooms } from './utils/layout';
 import {
     Plus, Layers, Map as MapIcon, Box, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
     TableProperties,
-    LandPlot, ChevronRight, ChevronLeft, Trash2, Key, X, Settings, LayoutTemplate,
+    LandPlot, ChevronRight, ChevronLeft, Eraser, Key, X, Settings, LayoutTemplate, Trash2,
     Zap, Magnet, Grid, Ruler, Moon, Sun, Maximize, ChevronUp, ChevronDown, Activity
 } from 'lucide-react';
 
@@ -67,8 +67,11 @@ export default function App() {
     // View State
     const [floors, setFloors] = useState(initialData?.floors || FLOORS);
     const [currentFloor, setCurrentFloor] = useState(initialData?.currentFloor || 0);
-    const [scale, setScale] = useState(1);
-    const [offset, setOffset] = useState<Point>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const [viewport, setViewport] = useState({
+        scale: 1,
+        offset: { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+    });
+    const { scale, offset } = viewport;
     const [is3DMode, setIs3DMode] = useState(false);
     const [currentStyle, setCurrentStyle] = useState<DiagramStyle>(DIAGRAM_STYLES[0]);
     const [selectedRoomIds, setSelectedRoomIds] = useState<Set<string>>(new Set());
@@ -87,6 +90,10 @@ export default function App() {
     const [snapGuides, setSnapGuides] = useState<{ x?: number, y?: number } | null>(null);
     const [isZoneDragging, setIsZoneDragging] = useState(false);
     const [editingFloorId, setEditingFloorId] = useState<number | null>(null);
+
+    const roomsRef = useRef(rooms);
+    roomsRef.current = rooms;
+
 
     // Dark Mode Local State
     const [darkMode, setDarkMode] = useState(() => {
@@ -207,6 +214,8 @@ export default function App() {
 
     // --- Utilities ---
     const getSnappedPosition = useCallback((room: Room, excludeId: string) => {
+        if (!room) return { x: 0, y: 0 };
+
         if (!snapEnabled) {
             setSnapGuides(null);
             return { x: room.x, y: room.y };
@@ -221,7 +230,8 @@ export default function App() {
         let activeGuideX: number | undefined;
         let activeGuideY: number | undefined;
 
-        const otherRooms = rooms.filter(r => r.isPlaced && r.id !== excludeId && r.floor === currentFloor);
+        const currentRooms = roomsRef.current || [];
+        const otherRooms = currentRooms.filter(r => r.isPlaced && r.id !== excludeId && r.floor === currentFloor);
 
         if (appSettings.snapToObjects) {
             for (const other of otherRooms) {
@@ -264,9 +274,14 @@ export default function App() {
             // (Already handled by snapPixelUnit in Bubble, but for whole room drag we might want it here too if we want grid snap)
         }
 
-        setSnapGuides(activeGuideX || activeGuideY ? { x: activeGuideX, y: activeGuideY } : null);
+        const newGuides = activeGuideX || activeGuideY ? { x: activeGuideX, y: activeGuideY } : null;
+        setSnapGuides(prev => {
+            if (!prev && !newGuides) return prev;
+            if (prev && newGuides && prev.x === newGuides.x && prev.y === newGuides.y) return prev;
+            return newGuides;
+        });
         return { x: snappedX, y: snappedY };
-    }, [rooms, currentFloor, snapEnabled, appSettings]);
+    }, [currentFloor, snapEnabled, appSettings]);
 
     // Canvas Refs
     const mainRef = useRef<HTMLElement>(null);
@@ -277,7 +292,10 @@ export default function App() {
     // Update offset on resize to keep center
     useEffect(() => {
         const handleResize = () => {
-            setOffset({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+            setViewport(prev => ({
+                ...prev,
+                offset: { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+            }));
         };
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
@@ -299,39 +317,39 @@ export default function App() {
 
 
     // --- Core Handlers ---
-    // --- Core Handlers ---
-    const handleWheel = (e: React.WheelEvent) => {
-        e.preventDefault(); // Prevent browser zoom if possible, though often handled by preventing default on document level
-        const zoomSensitivity = 0.001;
-        const delta = -e.deltaY * zoomSensitivity;
-        const newScale = Math.min(Math.max(0.1, scale + delta), 5); // Using additive scale for smoother feel, or multiplicative?
+    useEffect(() => {
+        const element = mainRef.current;
+        if (!element) return;
 
-        // Multiplicative zoom often feels better: scale *= (1 + sensitivity)
-        // Let's stick to current addictive logic but fix the origin.
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const rect = element.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
 
-        // Calculate mouse position relative to window
-        const mouseX = e.clientX;
-        const mouseY = e.clientY;
+            setViewport(prev => {
+                const { scale: currentScale, offset: currentOffset } = prev;
+                const zoomSensitivity = 0.001;
+                const delta = -e.deltaY * zoomSensitivity;
+                const newScale = Math.min(Math.max(0.1, currentScale + delta), 5);
 
-        // Calculate world position before zoom
-        // World = (Screen - Offset) / Scale
-        // Screen = World * Scale + Offset
+                const newOffsetX = mouseX - ((mouseX - currentOffset.x) / currentScale) * newScale;
+                const newOffsetY = mouseY - ((mouseY - currentOffset.y) / currentScale) * newScale;
 
-        // We want the point under mouse to stay at same screen position:
-        // mouseX = WorldX * newScale + newOffsetX
-        // newOffsetX = mouseX - WorldX * newScale
-        // newOffsetX = mouseX - ((mouseX - offset.x) / scale) * newScale
+                return {
+                    scale: newScale,
+                    offset: { x: newOffsetX, y: newOffsetY }
+                };
+            });
+        };
 
-        const newOffsetX = mouseX - ((mouseX - offset.x) / scale) * newScale;
-        const newOffsetY = mouseY - ((mouseY - offset.y) / scale) * newScale;
-
-        setScale(newScale);
-        setOffset({ x: newOffsetX, y: newOffsetY });
-    };
+        element.addEventListener('wheel', onWheel, { passive: false });
+        return () => element.removeEventListener('wheel', onWheel);
+    }, [viewMode]);
 
     const handlePanStart = (e: React.MouseEvent) => {
         // Allow pan on Middle Button OR Left Click on Background
-        if (e.button === 1 || (e.button === 0 && (e.shiftKey || e.target === e.currentTarget))) {
+        if (e.button === 1 || e.button === 0) {
             isPanning.current = true;
             lastMousePos.current = { x: e.clientX, y: e.clientY };
             // If dragging background, we might also want to clear selection?
@@ -346,7 +364,10 @@ export default function App() {
         if (isPanning.current) {
             const dx = e.clientX - lastMousePos.current.x;
             const dy = e.clientY - lastMousePos.current.y;
-            setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+            setViewport(prev => ({
+                ...prev,
+                offset: { x: prev.offset.x + dx, y: prev.offset.y + dy }
+            }));
             lastMousePos.current = { x: e.clientX, y: e.clientY };
         }
     };
@@ -358,17 +379,28 @@ export default function App() {
     const handleZoomToFit = () => {
         const currentFloorRooms = rooms.filter(r => r.isPlaced && r.floor === currentFloor);
         if (currentFloorRooms.length === 0) {
-            setScale(1);
-            setOffset({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+            setViewport({
+                scale: 1,
+                offset: { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+            });
             return;
         }
 
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         currentFloorRooms.forEach(r => {
-            minX = Math.min(minX, r.x);
-            minY = Math.min(minY, r.y);
-            maxX = Math.max(maxX, r.x + r.width);
-            maxY = Math.max(maxY, r.y + r.height);
+            if (r.polygon && r.polygon.length > 0) {
+                r.polygon.forEach(p => {
+                    minX = Math.min(minX, r.x + p.x);
+                    minY = Math.min(minY, r.y + p.y);
+                    maxX = Math.max(maxX, r.x + p.x);
+                    maxY = Math.max(maxY, r.y + p.y);
+                });
+            } else {
+                minX = Math.min(minX, r.x);
+                minY = Math.min(minY, r.y);
+                maxX = Math.max(maxX, r.x + r.width);
+                maxY = Math.max(maxY, r.y + r.height);
+            }
         });
 
         const padding = 100;
@@ -379,11 +411,13 @@ export default function App() {
             const { width, height } = mainRef.current.getBoundingClientRect();
             const scaleX = width / contentWidth;
             const scaleY = height / contentHeight;
-            const newScale = Math.min(Math.max(scaleX, scaleY, 0.1), 2);
+            const newScale = Math.min(Math.min(scaleX, scaleY), 2);
             const newOffsetX = (width / 2) - ((minX + maxX) / 2) * newScale;
             const newOffsetY = (height / 2) - ((minY + maxY) / 2) * newScale;
-            setScale(newScale);
-            setOffset({ x: newOffsetX, y: newOffsetY });
+            setViewport({
+                scale: newScale,
+                offset: { x: newOffsetX, y: newOffsetY }
+            });
         }
     };
 
@@ -504,6 +538,50 @@ export default function App() {
         reader.onload = (event) => {
             try {
                 const content = event.target?.result as string;
+                
+                // Handle CSV Import
+                if (file.name.toLowerCase().endsWith('.csv')) {
+                    const lines = content.split('\n');
+                    const newRooms: Room[] = [];
+                    // Skip header if present (simple check)
+                    const startIndex = lines[0].toLowerCase().includes('name') ? 1 : 0;
+
+                    for (let i = startIndex; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+                        // Expecting: Name, Area, Zone
+                        const parts = line.split(',');
+                        if (parts.length >= 2) {
+                            const name = parts[0].trim();
+                            const area = parseFloat(parts[1].trim());
+                            const zone = parts[2]?.trim() || 'Default';
+                            
+                            if (name && !isNaN(area)) {
+                                const side = Math.sqrt(area) * PIXELS_PER_METER;
+                                newRooms.push({
+                                    id: `room-${Date.now()}-${i}`,
+                                    name,
+                                    area,
+                                    zone,
+                                    isPlaced: false,
+                                    floor: 0,
+                                    x: 0, y: 0,
+                                    width: side,
+                                    height: side
+                                });
+                            }
+                        }
+                    }
+                    if (newRooms.length > 0) {
+                        addToHistory();
+                        setRooms(prev => [...prev, ...newRooms]);
+                        alert(`Imported ${newRooms.length} spaces from CSV.`);
+                    } else {
+                        alert("No valid spaces found in CSV.");
+                    }
+                    return;
+                }
+
                 const data = JSON.parse(content);
                 
                 if (data.rooms && Array.isArray(data.rooms)) {
@@ -633,6 +711,8 @@ export default function App() {
     }, []);
 
     const handleBubbleDragEnd = useCallback((room: Room, e: MouseEvent) => {
+        if (!room || !e) return;
+
         if (inventoryRef.current) {
             const rect = inventoryRef.current.getBoundingClientRect();
             if (
@@ -661,147 +741,157 @@ export default function App() {
 
     return (
         <div className="h-screen w-screen flex flex-col bg-slate-50 dark:bg-dark-bg overflow-hidden font-sans selection:bg-orange-500/20 transition-colors duration-300">
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+                :root, body, .font-sans { font-family: 'Inter', sans-serif; }
+            `}</style>
             {/* Premium Header */}
-            <header className="h-16 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-6 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] transition-colors duration-300">
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-3 group cursor-pointer">
-                        <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-orange-200/50 group-hover:scale-105 transition-transform duration-300">
-                            <MapIcon size={20} />
+            <header className="h-12 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] transition-colors duration-300">
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 group cursor-pointer">
+                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-orange-200/50 group-hover:scale-105 transition-transform duration-300">
+                            <MapIcon size={16} />
                         </div>
                         <div>
-                            <input
-                                className="font-black text-slate-900 dark:text-gray-100 tracking-tight leading-none mb-0.5 bg-transparent border-none focus:outline-none focus:ring-0 w-full p-0 text-lg"
-                                value={projectName}
-                                onChange={(e) => setProjectName(e.target.value)}
-                            />
-                            <p className="text-[9px] font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest">Architectural Project</p>
+                            <input className="font-black text-slate-900 dark:text-gray-100 tracking-tight leading-none bg-transparent border-none focus:outline-none focus:ring-0 w-full p-0 text-sm" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+                            <p className="text-[9px] font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest">A.Zone Project</p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                         <button
                             onClick={() => setDarkMode(!darkMode)}
                             className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${!darkMode ? 'text-slate-400 hover:text-orange-500 hover:bg-orange-50' : 'text-slate-400 hover:text-orange-400 hover:bg-white/5'}`}
                             title="Toggle Dark Mode"
                         >
-                            {darkMode ? <Moon size={16} /> : <Sun size={16} />}
+                            {darkMode ? <Moon size={14} /> : <Sun size={14} />}
                         </button>
                         <button
                             onClick={() => setShowApiKeyModal(true)}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${apiKey ? 'text-slate-400 hover:text-orange-600 hover:bg-orange-50' : 'text-orange-500 bg-orange-50 animate-pulse border border-orange-200 shadow-lg shadow-orange-100'}`}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${apiKey ? 'text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/5' : 'text-orange-500 bg-orange-50 dark:bg-orange-900/20 animate-pulse border border-orange-200 dark:border-orange-800/50 shadow-lg shadow-orange-100'}`}
                             title="Gemini API Key Settings"
                         >
-                            <Key size={16} />
+                            <Key size={14} />
                         </button>
                         <button onClick={() => setShowSettingsModal(true)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-white/5 transition-all" title="Settings">
-                            <Settings size={16} />
+                            <Settings size={14} />
                         </button>
                     </div>
 
-                    <div className="h-8 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
+                    <div className="h-6 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
 
                     <div className="flex items-center gap-1">
                         <button onClick={undo} disabled={history.length === 0} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-30 transition-all" title="Undo (Ctrl+Z)">
-                            <Undo2 size={16} />
+                            <Undo2 size={14} />
                         </button>
                         <button onClick={redo} disabled={future.length === 0} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-30 transition-all" title="Redo (Ctrl+Y)">
-                            <Redo2 size={16} />
+                            <Redo2 size={14} />
                         </button>
-                        <div className="w-px h-4 bg-slate-200 dark:bg-dark-border mx-1" />
+                        <div className="w-px h-3 bg-slate-200 dark:bg-dark-border mx-1" />
                         <button onClick={handleResetProject} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" title="Reset Project">
-                            <RotateCcw size={16} />
+                            <RotateCcw size={14} />
                         </button>
                     </div>
 
-                    <div className="h-8 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
+                    <div className="h-6 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
                     
                     {/* Workspace Toggle */}
-                    <div className="flex bg-slate-100/50 dark:bg-white/5 p-1 rounded-xl border border-slate-200/50 dark:border-dark-border">
+                    <div className="flex bg-slate-100/50 dark:bg-white/5 p-0.5 rounded-lg border border-slate-200/50 dark:border-dark-border">
                         <button
                             onClick={() => setViewMode('EDITOR')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'EDITOR' ? 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200'}`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'EDITOR' ? 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200'}`}
                         >
-                            <TableProperties size={14} /> Program
+                            <TableProperties size={12} /> Program
                         </button>
                         <button
                             onClick={() => setViewMode('CANVAS')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'CANVAS' ? 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200'}`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'CANVAS' ? 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200'}`}
                         >
-                            <LandPlot size={14} /> Canvas
+                            <LandPlot size={12} /> Canvas
                         </button>
                     </div>
 
                     {/* Scale Bar (Header Version - Optional, but easier to see) */}
                     {viewMode === 'CANVAS' && (
                         <>
-                            <div className="h-8 w-px bg-slate-200/60 mx-1" />
+                            <div className="h-6 w-px bg-slate-200/60 mx-1" />
                             <div className="flex items-center gap-2 text-slate-400">
-                                <div className="h-1 w-16 bg-slate-300 rounded-full relative">
-                                    <div className="absolute -top-3 left-0 text-[8px] font-bold">0m</div>
-                                    <div className="absolute -top-3 right-0 text-[8px] font-bold">{(16 / scale / PIXELS_PER_METER * 4).toFixed(1)}m</div>
+                                <div className="h-1 w-12 bg-slate-300 rounded-full relative">
+                            <div className="absolute -top-3 left-0 text-[9px] font-bold">0m</div>
+                            <div className="absolute -top-3 right-0 text-[9px] font-bold">{(16 / scale / PIXELS_PER_METER * 4).toFixed(1)}m</div>
                                 </div>
-                                <span className="text-[9px] font-black uppercase tracking-widest">Scale</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest">Scale</span>
                             </div>
                         </>
                     )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 group"
+                    >
+                        <Upload size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Export
+                    </button>
+
+                    <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 cursor-pointer group">
+                        <Download size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Import
+                        <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
+                    </label>
                     {viewMode === 'CANVAS' && (
                         <>
-                            <div className="w-px h-8 bg-slate-200/60 mx-1" />
+                            <div className="w-px h-6 bg-slate-200/60 mx-1" />
 
-                            <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-xl p-1 border border-slate-200/50 dark:border-dark-border">
+                            <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-lg p-1 border border-slate-200/50 dark:border-dark-border gap-2">
+                                <span className="text-xs font-bold font-sans w-8 text-center">{gridSize}m</span>
+                                <div className="flex flex-col -space-y-1">
+                                    <button onClick={() => setGridSizeIndex(prev => Math.min(prev + 1, GRID_SIZES.length - 1))} className="text-slate-400 hover:text-orange-600"><ChevronUp size={12} /></button>
+                                    <button onClick={() => setGridSizeIndex(prev => Math.max(prev - 1, 0))} className="text-slate-400 hover:text-orange-600"><ChevronDown size={12} /></button>
+                                </div>
                                 <button
                                     onClick={() => setShowGrid(!showGrid)}
-                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${!showGrid ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm'}`}
+                                    className={`w-6 h-6 rounded-md flex items-center justify-center transition-all duration-300 ${!showGrid ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm'}`}
                                     title="Toggle Grid"
                                 >
-                                    <Grid size={16} />
+                                    <Grid size={12} />
                                 </button>
-                                <div className="flex flex-col items-center justify-center px-1 gap-0.5">
-                                    <button onClick={() => setGridSizeIndex(prev => Math.min(prev + 1, GRID_SIZES.length - 1))} className="text-slate-400 hover:text-orange-600"><ChevronUp size={10} /></button>
-                                    <span className="text-[10px] font-bold font-mono w-6 text-center">{gridSize}m</span>
-                                    <button onClick={() => setGridSizeIndex(prev => Math.max(prev - 1, 0))} className="text-slate-400 hover:text-orange-600"><ChevronDown size={10} /></button>
-                                </div>
                             </div>
 
                             <button
                                 onClick={handleAutoArrange}
-                                className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5"
                                 title="Auto Arrange Layout"
                             >
-                                <LayoutTemplate size={18} />
+                                <LayoutTemplate size={16} />
                             </button>
 
                             <button
                                 onClick={handleClearCanvas}
-                                className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500"
                                 title="Clear Canvas"
                             >
-                                <Trash2 size={18} />
+                                <Eraser size={16} />
                             </button>
 
-                            <button onClick={() => setSnapEnabled(!snapEnabled)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${!snapEnabled ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50'}`} title="Toggle Snapping"><Magnet size={18} /></button>
+                            <button onClick={() => setSnapEnabled(!snapEnabled)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${!snapEnabled ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50'}`} title="Toggle Snapping"><Magnet size={16} /></button>
 
                             <button
                                 onClick={() => setIsMagnetMode(!isMagnetMode)}
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${!isMagnetMode ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50 shadow-inner'}`}
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${!isMagnetMode ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50 shadow-inner'}`}
                                 title="Physics / Magnetic Zones"
                             >
-                                <Activity size={18} className={isMagnetMode ? "animate-pulse" : ""} />
+                                <Activity size={16} className={isMagnetMode ? "animate-pulse" : ""} />
                             </button>
+
+                            <div className="w-px h-6 bg-slate-200/60 mx-1" />
 
                             <button
-                                onClick={() => setShowExportModal(true)}
-                                className="h-10 px-6 bg-slate-900 dark:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-600 transition-all duration-500 flex items-center gap-2.5 group"
+                                onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 group"
                             >
-                                <Download size={16} className="group-hover:-translate-y-0.5 transition-transform" /> Export
+                                <Download size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Export
                             </button>
-
-                            <label className="h-10 px-6 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border text-slate-700 dark:text-gray-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-orange-500 hover:text-orange-600 transition-all duration-300 flex items-center gap-2.5 cursor-pointer group">
-                                <Upload size={16} className="group-hover:-translate-y-0.5 transition-transform" /> Import
-                                <input type="file" accept=".json" className="hidden" onChange={handleImportProject} />
+                            <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 cursor-pointer group">
+                                <Upload size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Import
+                                <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
                             </label>
                         </>
                     )}
@@ -833,7 +923,7 @@ export default function App() {
                             <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/30 dark:bg-white/5">
                                 <div>
                                     <h2 className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2 mb-1">
-                                        <Zap size={12} className="text-yellow-500" /> Space Inventory
+                                        Space Inventory
                                     </h2>
                                     <p className="text-[10px] font-bold text-slate-500 dark:text-gray-400">{unplacedRooms.length} spaces pending placement</p>
                                 </div>
@@ -862,7 +952,7 @@ export default function App() {
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <span className="px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-lg text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-wider">{room.area} m²</span>
-                                            <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm ${ZONE_COLORS[room.zone]?.bg || 'bg-slate-100'} ${ZONE_COLORS[room.zone]?.text || 'text-slate-500'}`}>{room.zone}</span>
+                                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm ${ZONE_COLORS[room.zone]?.bg || 'bg-slate-100'} ${ZONE_COLORS[room.zone]?.text || 'text-slate-500'}`}>{room.zone}</span>
                                         </div>
                                     </div>
                                 )) : (
@@ -884,7 +974,6 @@ export default function App() {
                         <main
                             ref={mainRef}
                             className={`flex-1 relative overflow-hidden bg-[#f0f2f5] dark:bg-dark-bg transition-colors duration-500 ${isZoneDragging ? 'no-transition' : ''}`}
-                            onWheel={handleWheel}
                             onMouseDown={handlePanStart}
                             onMouseMove={handleMouseMove}
                             onMouseUp={handleMouseUp}
@@ -1018,7 +1107,7 @@ export default function App() {
                             <div className="absolute top-6 right-6 flex flex-col gap-2">
                                 <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm px-2 py-2 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-2">
                                     <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase pl-2">Zoom</span>
-                                    <span className="text-xs font-mono font-bold text-slate-700 dark:text-gray-300 w-10 text-center">{(scale * 100).toFixed(0)}%</span>
+                                    <span className="text-xs font-sans font-bold text-slate-700 dark:text-gray-300 w-10 text-center">{(scale * 100).toFixed(0)}%</span>
                                     <button onClick={handleZoomToFit} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-600 dark:text-gray-300 hover:bg-orange-600 hover:text-white transition-colors" title="Zoom to Fit">
                                         <Maximize size={12} />
                                     </button>
@@ -1028,7 +1117,7 @@ export default function App() {
                             {/* Scale Bar on Canvas - Dynamic */}
                             <div className="absolute bottom-12 right-6 flex flex-col items-end gap-1 pointer-events-none">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-bold text-slate-400 text-shadow-sm">10 meters</span>
+                                    <span className="text-[10px] font-bold text-slate-400 text-shadow-sm">10 meters</span>
                                     <div className="h-2 border-x border-b border-slate-400/80 bg-white/20 backdrop-blur-sm"
                                         style={{ width: 10 * PIXELS_PER_METER * scale }} />
                                 </div>
@@ -1041,7 +1130,7 @@ export default function App() {
                                         key={f.id}
                                         onClick={() => setCurrentFloor(f.id)}
                                         onDoubleClick={() => setEditingFloorId(f.id)}
-                                        className={`
+                                        className={`group
                                             relative px-4 py-1.5 text-[9px] font-black uppercase tracking-widest cursor-pointer transition-all rounded-b-lg flex items-center gap-2 select-none border-b border-x border-transparent
                                             ${currentFloor === f.id
                                                 ? 'bg-[#f0f2f5] dark:bg-dark-bg text-orange-600 border-slate-200/50 dark:border-dark-border !border-t-transparent h-full -translate-y-px'
@@ -1052,7 +1141,7 @@ export default function App() {
                                         {editingFloorId === f.id ? (
                                             <input
                                                 autoFocus
-                                                className="bg-transparent border-none outline-none w-20 text-center font-black uppercase tracking-widest p-0 text-[9px] text-orange-600"
+                                                className="bg-transparent border-none outline-none w-20 text-center font-black uppercase tracking-widest p-0 text-[10px] text-orange-600"
                                                 value={f.label}
                                                 onChange={(e) => handleRenameFloor(f.id, e.target.value)}
                                                 onBlur={() => setEditingFloorId(null)}
@@ -1067,7 +1156,7 @@ export default function App() {
                                                 {f.label}
                                                 {currentFloor === f.id && (
                                                     <button
-                                                        onClick={(e) => handleDeleteFloor(e, f.id)}
+                                                        onClick={(e) => floors.length > 1 && handleDeleteFloor(e, f.id)}
                                                         className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition-colors ml-1"
                                                         title="Delete Floor"
                                                     >
@@ -1110,11 +1199,17 @@ export default function App() {
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
                                             <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Area</span>
-                                            <span className="text-lg font-mono font-bold text-slate-700 dark:text-gray-200">{selectedRoom.area} <small className="text-xs opacity-60">m²</small></span>
+                                            <div className="flex items-baseline gap-1">
+                                                <input type="number" className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200 bg-transparent border-b border-transparent focus:border-orange-500 outline-none w-full" value={selectedRoom.area} onChange={(e) => {
+                                                    const val = parseFloat(e.target.value);
+                                                    if (!isNaN(val)) updateRoom(selectedRoom.id, { area: val });
+                                                }} />
+                                                <small className="text-xs opacity-60">m²</small>
+                                            </div>
                                         </div>
                                         <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
                                             <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Floor</span>
-                                            <span className="text-lg font-mono font-bold text-slate-700 dark:text-gray-200">{selectedRoom.floor}</span>
+                                            <span className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200">{floors.find(f => f.id === selectedRoom.floor)?.label || 'N/A'}</span>
                                         </div>
                                     </div>
                                     <div>
@@ -1141,7 +1236,7 @@ export default function App() {
                                         </div>
                                     </div>
                                     <div className="pt-6 border-t border-slate-100 dark:border-dark-border">
-                                        <button onClick={() => deleteRoom(selectedRoom.id)} className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2">
+                                        <button onClick={() => deleteRoom(selectedRoom.id)} className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2">
                                             <Trash2 size={16} /> Delete Space
                                         </button>
                                     </div>
@@ -1165,7 +1260,7 @@ export default function App() {
                                             <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase">Total Stats</span>
                                             <span className="text-[10px] font-bold text-orange-600 bg-orange-500/10 px-2 py-1 rounded-md">{selectedZoneRooms.length} Spaces</span>
                                         </div>
-                                        <div className="text-3xl font-mono font-bold text-slate-800 dark:text-gray-100 tracking-tight">
+                                        <div className="text-3xl font-sans font-bold text-slate-800 dark:text-gray-100 tracking-tight">
                                             {zoneArea} <span className="text-sm font-sans text-slate-400 dark:text-gray-500 font-bold">m²</span>
                                         </div>
                                     </div>
@@ -1176,10 +1271,10 @@ export default function App() {
                                         </label>
                                         <div className="space-y-2">
                                             {selectedZoneRooms.map(r => (
-                                                <div key={r.id} className="flex items-center justify-between p-3 bg-white dark:bg-white/5 border border-slate-100 dark:border-dark-border rounded-xl hover:shadow-md transition-all cursor-pointer group"
+                                                <div key={r.id} className="flex items-center justify-between p-3 bg-white dark:bg-dark-bg border border-slate-100 dark:border-dark-border rounded-xl hover:shadow-md hover:border-orange-300 dark:hover:border-orange-800 transition-all cursor-pointer group"
                                                     onClick={() => setSelectedRoomIds(new Set([r.id]))}>
-                                                    <span className="text-xs font-bold text-slate-700 dark:text-gray-300 group-hover:text-orange-600">{r.name}</span>
-                                                    <span className="text-[10px] font-mono text-slate-400 dark:text-gray-500">{r.area} m²</span>
+                                                    <span className="text-sm font-bold text-slate-700 dark:text-gray-300 group-hover:text-orange-600">{r.name}</span>
+                                                    <span className="text-[10px] font-sans text-slate-400 dark:text-gray-500">{r.area} m²</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -1221,7 +1316,26 @@ export default function App() {
             {showExportModal && (
                 <ExportModal
                     onClose={() => setShowExportModal(false)}
+                    viewMode={viewMode}
                     onExport={(format) => {
+                        if (format === 'csv') {
+                            // CSV Export Logic
+                            const headers = "Name,Area,Zone,Floor\n";
+                            const csvContent = rooms.map(r => `${r.name},${r.area},${r.zone},${floors.find(f => f.id === r.floor)?.label || 'Unplaced'}`).join('\n');
+                            const blob = new Blob([headers + csvContent], { type: 'text/csv;charset=utf-8;' });
+                            const link = document.createElement("a");
+                            if (link.download !== undefined) {
+                                const url = URL.createObjectURL(blob);
+                                link.setAttribute("href", url);
+                                link.setAttribute("download", `${projectName}.csv`);
+                                link.style.visibility = 'hidden';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                            }
+                            setShowExportModal(false);
+                            return;
+                        }
                         handleExport(format, projectName, rooms, connections, currentFloor, darkMode, zoneColors, floors, appSettings);
                         setShowExportModal(false);
                     }}

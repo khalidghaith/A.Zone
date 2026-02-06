@@ -70,17 +70,17 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
             <div className="flex-1 flex flex-col overflow-hidden relative">
                 <div className="h-full flex flex-col w-full py-6 px-6">
                     {/* Action bar */}
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="relative flex-1 max-w-md">
-                            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input className="w-full pl-12 pr-4 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-orange-500 focus:outline-none shadow-sm dark:text-gray-200" placeholder="Filter spaces..." />
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="relative flex-1 max-w-xs">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border rounded-lg text-xs font-medium focus:ring-2 focus:ring-orange-500 focus:outline-none shadow-sm dark:text-gray-200" placeholder="Filter spaces..." />
                         </div>
-                        <div className="flex gap-3">
-                            <button onClick={() => setShowAiModal(true)} className="px-4 py-3 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/30 rounded-xl text-xs font-bold hover:bg-orange-100 dark:hover:bg-orange-900/30 flex items-center gap-2 uppercase tracking-wider transition-colors">
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowAiModal(true)} className="h-8 px-3 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/30 rounded-lg text-[10px] font-black hover:bg-orange-100 dark:hover:bg-orange-900/30 flex items-center gap-2 uppercase tracking-widest transition-colors">
                                 <Wand2 size={16} /> AI Suggest
                             </button>
-                            <button onClick={() => addRoom({ name: 'New Space', area: 15, zone: 'Default' })} className="px-5 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border text-slate-700 dark:text-gray-300 rounded-xl text-xs font-bold hover:border-orange-500 hover:text-orange-600 flex items-center gap-2 uppercase tracking-wider shadow-sm transition-all">
-                                <Plus size={16} /> Add Manual Space
+                            <button onClick={() => addRoom({ name: 'New Space', area: 15, zone: 'Default' })} className="h-8 px-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border text-slate-700 dark:text-gray-300 rounded-lg text-[10px] font-black hover:border-orange-500 hover:text-orange-600 flex items-center gap-2 uppercase tracking-widest shadow-sm transition-all">
+                                <Plus size={16} /> Add Space
                             </button>
                         </div>
                     </div>
@@ -157,7 +157,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                             </table>
                         </div>
                         <div className="bg-slate-50 dark:bg-white/5 border-t border-slate-200 dark:border-dark-border p-4 flex justify-between items-center text-xs font-bold text-slate-500 dark:text-gray-400">
-                            <span>{rooms.length} Spaces</span>
+                            <span className="font-mono">{rooms.length} Spaces</span>
                             <span>Total Area: {totalArea} m²</span>
                         </div>
                     </div>
@@ -169,18 +169,18 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                 <div className="p-6 space-y-8">
                     <div>
                         <h2 className="text-lg font-black text-slate-800 dark:text-gray-100 mb-1">Analytics</h2>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Project Statistics</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Project Statistics</p>
                     </div>
 
                     {/* Stats Cards */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-dark-border">
-                            <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Gross (x1.3)</span>
-                            <span className="text-sm font-black text-slate-700 dark:text-gray-200">{((totalArea as number) * 1.3).toFixed(0)} m²</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Gross (x1.3)</span>
+                            <span className="text-base font-black text-slate-700 dark:text-gray-200">{((totalArea as number) * 1.3).toFixed(0)} m²</span>
                         </div>
                         <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-dark-border">
-                            <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Count</span>
-                            <span className="text-sm font-black text-orange-600">{rooms.length}</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Count</span>
+                            <span className="text-base font-black text-orange-600">{rooms.length}</span>
                         </div>
                     </div>
 
@@ -189,20 +189,20 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                         <div className="w-32 h-32 rounded-full border-[8px] border-slate-50 dark:border-white/5 flex flex-col items-center justify-center shadow-inner bg-white dark:bg-dark-surface relative">
                             <div className="absolute inset-0 rounded-full border border-slate-200 dark:border-white/10" />
                             <span className="text-2xl font-black text-slate-800 dark:text-gray-100 tracking-tight">{(totalArea as number).toFixed(0)}</span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Net m²</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Net m²</span>
                         </div>
                     </div>
 
                     {/* Zone Distribution */}
                     <div>
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Zone Distribution</h3>
+                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Zone Distribution</h3>
                             <button 
                                 onClick={() => {
                                     const name = prompt("Enter new zone name:");
                                     if (name) onAddZone(name);
                                 }}
-                                className="px-3 py-2 rounded-lg text-[10px] font-bold border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 transition-all flex items-center justify-center gap-1"
+                                className="px-3 py-2 rounded-lg text-[10px] font-black border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 transition-all flex items-center justify-center gap-1"
                             >
                                 <Plus size={12} /> New
                             </button>
@@ -210,7 +210,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                         <div className="space-y-4">
                             {Object.entries(totalsByZone).map(([zone, area]) => (
                                 <div key={zone}>
-                                    <div className="flex justify-between text-xs font-bold text-slate-700 dark:text-gray-300 mb-1.5">
+                                    <div className="flex justify-between text-sm font-bold text-slate-700 dark:text-gray-300 mb-1.5">
                                         <span>{zone}</span>
                                         <span>{(area as number).toFixed(0)} m²</span>
                                     </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Room, ZoneColor } from '../types';
 import {
     X, Search, Trash2, LayoutGrid,
@@ -20,6 +20,45 @@ interface ProgramEditorProps {
     onInteractionStart?: () => void;
 }
 
+function escapeRegExp(string: string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const NameInput = ({ value, onChange, onFocus, highlight, placeholder }: any) => {
+    const [isFocused, setIsFocused] = useState(false);
+
+    if (!isFocused && highlight && value.toLowerCase().includes(highlight.toLowerCase())) {
+        const regex = new RegExp(`(${escapeRegExp(highlight)})`, 'gi');
+        const parts = value.split(regex);
+        return (
+            <div
+                className="w-full font-bold text-slate-700 dark:text-gray-200 text-sm border-b border-transparent cursor-text whitespace-nowrap overflow-hidden"
+                onClick={() => setIsFocused(true)}
+            >
+                {parts.map((part: string, i: number) =>
+                    part.toLowerCase() === highlight.toLowerCase() ? (
+                        <span key={i} className="bg-yellow-200 dark:bg-yellow-900/50 text-slate-900 dark:text-yellow-100 rounded-[1px]">{part}</span>
+                    ) : (
+                        <span key={i}>{part}</span>
+                    )
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <input
+            className="w-full bg-transparent font-bold text-slate-700 dark:text-gray-200 text-sm focus:outline-none focus:text-orange-600 transition-colors border-b border-transparent focus:border-orange-500/20"
+            value={value}
+            onChange={onChange}
+            onFocus={(e) => { setIsFocused(true); onFocus?.(); }}
+            onBlur={() => setIsFocused(false)}
+            placeholder={placeholder}
+            autoFocus={isFocused}
+        />
+    );
+};
+
 export const ProgramEditor: React.FC<ProgramEditorProps> = ({
     rooms, updateRoom, deleteRoom, addRoom, apiKey, onSaveApiKey, setRooms, zoneColors, onAddZone, onInteractionStart
 }) => {
@@ -27,6 +66,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
     const [aiPrompt, setAiPrompt] = useState("");
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [showApiKeySettings, setShowApiKeySettings] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
 
     const totalsByZone = rooms.reduce((acc, r) => {
         acc[r.zone] = (acc[r.zone] || 0) + r.area;
@@ -34,6 +74,12 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
     }, {} as Record<string, number>);
 
     const totalArea = rooms.reduce((acc, r) => acc + r.area, 0);
+
+    const filteredRooms = useMemo(() => {
+        if (!searchQuery.trim()) return rooms;
+        const lower = searchQuery.toLowerCase();
+        return rooms.filter(r => r.name.toLowerCase().includes(lower));
+    }, [rooms, searchQuery]);
 
     const handleAiGenerate = async () => {
         if (!apiKey) {
@@ -66,6 +112,16 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
 
     return (
         <div className="h-full w-full bg-slate-50 dark:bg-dark-bg flex font-sans text-slate-900 dark:text-gray-100 transition-colors duration-300">
+            <style>{`
+                input[type=number]::-webkit-inner-spin-button, 
+                input[type=number]::-webkit-outer-spin-button { 
+                    -webkit-appearance: none; 
+                    margin: 0; 
+                }
+                input[type=number] {
+                    -moz-appearance: textfield;
+                }
+            `}</style>
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden relative">
                 <div className="h-full flex flex-col w-full py-6 px-6">
@@ -73,7 +129,12 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                     <div className="flex items-center justify-between mb-4">
                         <div className="relative flex-1 max-w-xs">
                             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border rounded-lg text-xs font-medium focus:ring-2 focus:ring-orange-500 focus:outline-none shadow-sm dark:text-gray-200" placeholder="Filter spaces..." />
+                            <input 
+                                className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border rounded-lg text-xs font-medium focus:ring-2 focus:ring-orange-500 focus:outline-none shadow-sm dark:text-gray-200" 
+                                placeholder="Filter spaces..." 
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
                         </div>
                         <div className="flex gap-2">
                             <button onClick={() => setShowAiModal(true)} className="h-8 px-3 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/30 rounded-lg text-[10px] font-black hover:bg-orange-100 dark:hover:bg-orange-900/30 flex items-center gap-2 uppercase tracking-widest transition-colors">
@@ -99,7 +160,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {rooms.length === 0 && (
+                                    {rooms.length === 0 ? (
                                         <tr>
                                             <td colSpan={5} className="py-20 text-center text-slate-400">
                                                 <div className="flex flex-col items-center gap-2">
@@ -109,16 +170,22 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                                 </div>
                                             </td>
                                         </tr>
-                                    )}
-                                    {rooms.map((room, idx) => (
+                                    ) : filteredRooms.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} className="py-20 text-center text-slate-400">
+                                                <p className="text-sm font-medium">No spaces match your search.</p>
+                                            </td>
+                                        </tr>
+                                    ) : null}
+                                    {filteredRooms.map((room, idx) => (
                                         <tr key={room.id} className="group hover:bg-slate-50/80 dark:hover:bg-white/5 transition-colors">
                                             <td className="px-8 py-4 text-xs font-mono text-slate-400">{idx + 1}</td>
                                             <td className="px-8 py-4">
-                                                <input
-                                                    className="w-full bg-transparent font-bold text-slate-700 dark:text-gray-200 text-sm focus:outline-none focus:text-orange-600 transition-colors border-b border-transparent focus:border-orange-500/20"
+                                                <NameInput
                                                     value={room.name}
                                                     onChange={(e) => updateRoom(room.id, { name: e.target.value })}
                                                     onFocus={onInteractionStart}
+                                                    highlight={searchQuery}
                                                     placeholder="Space Name"
                                                 />
                                             </td>

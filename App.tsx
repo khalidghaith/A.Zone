@@ -421,6 +421,22 @@ export default function App() {
         }
     };
 
+    const handlePlaceCenter = (room: Room) => {
+        addToHistory();
+        if (mainRef.current) {
+            const rect = mainRef.current.getBoundingClientRect();
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+
+            // Convert to World Coordinates
+            const worldX = (centerX - offset.x) / scale - room.width / 2;
+            const worldY = (centerY - offset.y) / scale - room.height / 2;
+
+            updateRoom(room.id, { isPlaced: true, floor: currentFloor, x: worldX, y: worldY });
+            setSelectedRoomIds(new Set([room.id]));
+        }
+    };
+
     const handleAddFloor = () => {
         addToHistory();
         const newId = floors.length > 0 ? Math.max(...floors.map(f => f.id)) + 1 : 0;
@@ -837,64 +853,6 @@ export default function App() {
                         <Download size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Import
                         <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
                     </label>
-                    {viewMode === 'CANVAS' && (
-                        <>
-                            <div className="w-px h-6 bg-slate-200/60 mx-1" />
-
-                            <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-lg p-1 border border-slate-200/50 dark:border-dark-border gap-2">
-                                <span className="text-xs font-bold font-sans w-8 text-center">{gridSize}m</span>
-                                <div className="flex flex-col -space-y-1">
-                                    <button onClick={() => setGridSizeIndex(prev => Math.min(prev + 1, GRID_SIZES.length - 1))} className="text-slate-400 hover:text-orange-600"><ChevronUp size={12} /></button>
-                                    <button onClick={() => setGridSizeIndex(prev => Math.max(prev - 1, 0))} className="text-slate-400 hover:text-orange-600"><ChevronDown size={12} /></button>
-                                </div>
-                                <button
-                                    onClick={() => setShowGrid(!showGrid)}
-                                    className={`w-6 h-6 rounded-md flex items-center justify-center transition-all duration-300 ${!showGrid ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm'}`}
-                                    title="Toggle Grid"
-                                >
-                                    <Grid size={12} />
-                                </button>
-                            </div>
-
-                            <button
-                                onClick={handleAutoArrange}
-                                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5"
-                                title="Auto Arrange Layout"
-                            >
-                                <LayoutTemplate size={16} />
-                            </button>
-
-                            <button
-                                onClick={handleClearCanvas}
-                                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500"
-                                title="Clear Canvas"
-                            >
-                                <Eraser size={16} />
-                            </button>
-
-                            <button onClick={() => setSnapEnabled(!snapEnabled)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${!snapEnabled ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50'}`} title="Toggle Snapping"><Magnet size={16} /></button>
-
-                            <button
-                                onClick={() => setIsMagnetMode(!isMagnetMode)}
-                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${!isMagnetMode ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50 shadow-inner'}`}
-                                title="Physics / Magnetic Zones"
-                            >
-                                <Activity size={16} className={isMagnetMode ? "animate-pulse" : ""} />
-                            </button>
-
-                            <div className="w-px h-6 bg-slate-200/60 mx-1" />
-
-                            <button
-                                onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 group"
-                            >
-                                <Download size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Export
-                            </button>
-                            <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 cursor-pointer group">
-                                <Upload size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Import
-                                <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
-                            </label>
-                        </>
-                    )}
                 </div>
             </header>
 
@@ -946,9 +904,12 @@ export default function App() {
                                                 <span className="font-black text-slate-800 dark:text-gray-200 text-sm tracking-tight block group-hover:text-orange-600 transition-colors">{room.name}</span>
                                                 <span className="text-[10px] text-slate-400 dark:text-gray-500 font-medium">Drag to canvas to place</span>
                                             </div>
-                                            <div className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-white/5 flex items-center justify-center text-slate-300 dark:text-gray-500 group-hover:bg-orange-500/10 group-hover:text-orange-600 transition-all">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handlePlaceCenter(room); }}
+                                                className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-white/5 flex items-center justify-center text-slate-300 dark:text-gray-500 group-hover:bg-orange-500/10 group-hover:text-orange-600 transition-all hover:scale-110 active:scale-95"
+                                            >
                                                 <Plus size={16} />
-                                            </div>
+                                            </button>
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <span className="px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-lg text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-wider">{room.area} m²</span>
@@ -1016,7 +977,7 @@ export default function App() {
                             </svg>
 
                             <div
-                                className="absolute inset-0 transition-transform duration-75 origin-top-left"
+                                className="absolute inset-0 transition-transform duration-75 origin-top-left pointer-events-none"
                                 style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
                             >
                                 {/* Connection Lines Layer */}
@@ -1102,6 +1063,52 @@ export default function App() {
                                         onDragStart={addToHistory}
                                     />
                                 ))}
+                            </div>
+
+                            {/* Tools Bar (Top Left) */}
+                            <div className="absolute top-6 left-6 flex flex-col gap-2 z-50">
+                                <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm p-1.5 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-1">
+                                    <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-full px-2 py-1 border border-slate-200/50 dark:border-dark-border gap-2 mr-1">
+                                        <span className="text-xs font-bold font-sans w-8 text-center">{gridSize}m</span>
+                                        <div className="flex flex-col -space-y-1">
+                                            <button onClick={() => setGridSizeIndex(prev => Math.min(prev + 1, GRID_SIZES.length - 1))} className="text-slate-400 hover:text-orange-600"><ChevronUp size={12} /></button>
+                                            <button onClick={() => setGridSizeIndex(prev => Math.max(prev - 1, 0))} className="text-slate-400 hover:text-orange-600"><ChevronDown size={12} /></button>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowGrid(!showGrid)}
+                                            className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 ${!showGrid ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm'}`}
+                                            title="Toggle Grid"
+                                        >
+                                            <Grid size={12} />
+                                        </button>
+                                    </div>
+
+                                    <button
+                                        onClick={handleAutoArrange}
+                                        className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-orange-600"
+                                        title="Auto Arrange Layout"
+                                    >
+                                        <LayoutTemplate size={16} />
+                                    </button>
+
+                                    <button onClick={() => setSnapEnabled(!snapEnabled)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${!snapEnabled ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50'}`} title="Toggle Snapping"><Magnet size={16} /></button>
+
+                                    <button
+                                        onClick={() => setIsMagnetMode(!isMagnetMode)}
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${!isMagnetMode ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50 shadow-inner'}`}
+                                        title="Physics / Magnetic Zones"
+                                    >
+                                        <Activity size={16} className={isMagnetMode ? "animate-pulse" : ""} />
+                                    </button>
+
+                                    <button
+                                        onClick={handleClearCanvas}
+                                        className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500"
+                                        title="Clear Canvas"
+                                    >
+                                        <Eraser size={16} />
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="absolute top-6 right-6 flex flex-col gap-2">

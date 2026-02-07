@@ -15,8 +15,10 @@ interface BubbleProps {
     snapPixelUnit: number;
     getSnappedPosition?: (room: Room, excludeId: string) => { x: number, y: number };
     onLinkToggle?: (id: string) => void;
+    onMove?: (x: number, y: number) => void;
     onDragStart?: () => void;
     isLinkingSource?: boolean;
+    isAnyDragging?: boolean;
     pixelsPerMeter: number;
     floors: { id: number; label: string }[];
     appSettings: AppSettings;
@@ -85,7 +87,7 @@ const ROTATE_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.or
 
 const BubbleComponent: React.FC<BubbleProps> = ({
     room, zoomScale, updateRoom, isSelected, onSelect, diagramStyle, snapEnabled, snapPixelUnit,
-    getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors, appSettings, zoneColors, onDragEnd, onDragStart
+    getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors, appSettings, zoneColors, onDragEnd, onDragStart, onMove, isAnyDragging
 }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [isRotating, setIsRotating] = useState(false);
@@ -105,6 +107,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const [wobbleTime, setWobbleTime] = useState(0);
 
     const [selectedVertices, setSelectedVertices] = useState<Set<number>>(new Set());
+    const hasMoved = useRef(false);
 
     const bubbleRef = useRef<HTMLDivElement>(null);
     const startDragState = useRef({
@@ -196,6 +199,10 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             const dyScreen = e.clientY - startDragState.current.startY;
             const dxWorld = dxScreen / zoomScale;
             const dyWorld = dyScreen / zoomScale;
+
+            if (!hasMoved.current && (Math.abs(dxScreen) > 2 || Math.abs(dyScreen) > 2)) {
+                hasMoved.current = true;
+            }
 
             if (resizeHandle) {
                 const s = startDragState.current;
@@ -395,7 +402,11 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     nX = snapped.x;
                     nY = snapped.y;
                 }
-                updateRoom(room.id, { x: nX, y: nY });
+                if (onMove) {
+                    onMove(nX, nY);
+                } else {
+                    updateRoom(room.id, { x: nX, y: nY });
+                }
             }
         };
 
@@ -403,6 +414,11 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             if (isDragging && onDragEnd) {
                 onDragEnd(room, e);
             }
+
+            if (isDragging && !hasMoved.current && isSelected && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                onSelect(room.id, false);
+            }
+
             // Trigger wobble if we were manipulating a bubble vertex
             if (draggedVertex !== null && room.shape === 'bubble') {
                 setWobbleTime(1.0);
@@ -426,7 +442,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, isRotating, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition, onDragEnd]);
+    }, [isDragging, isRotating, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition, onDragEnd, onMove, isSelected, onSelect]);
 
     const handleResizeStart = (e: React.MouseEvent, handle: string) => {
         e.stopPropagation();
@@ -447,9 +463,15 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         // So yes, clear vertex selection.
         if (selectedVertices.size > 0 && !e.ctrlKey && !e.shiftKey) setSelectedVertices(new Set());
 
-        onSelect(room.id, e.shiftKey || e.ctrlKey || e.metaKey);
+        const isMulti = e.shiftKey || e.ctrlKey || e.metaKey;
+        if (isSelected && !isMulti) {
+            // Don't select yet, wait to see if it's a drag
+        } else {
+            onSelect(room.id, isMulti);
+        }
         onDragStart?.();
         setIsDragging(true);
+        hasMoved.current = false;
         startDragState.current = {
             startX: e.clientX, startY: e.clientY,
             roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height
@@ -638,11 +660,12 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     };
 
     const isInteracting = isDragging || isRotating || resizeHandle !== null || draggedVertex !== null || draggedEdge !== null;
+    const disableTransition = isInteracting || (isSelected && isAnyDragging);
 
     return (
         <div
             ref={bubbleRef}
-            className={`absolute ${isInteracting ? '' : 'bubble-transition'} pointer-events-auto ${isSelected ? 'z-20' : 'z-10'} ${isLinkingSource ? 'ring-4 ring-yellow-400 ring-offset-2 rounded-xl' : ''}`}
+            className={`absolute ${disableTransition ? '' : 'bubble-transition'} pointer-events-auto ${isSelected ? 'z-20' : 'z-10'} ${isLinkingSource ? 'ring-4 ring-yellow-400 ring-offset-2 rounded-xl' : ''}`}
             style={{
                 transform: `translate3d(${room.x}px, ${room.y}px, 0) rotate(${room.rotation || 0}deg)`,
                 width: (room.polygon || room.shape === 'bubble') ? 0 : room.width,
@@ -841,18 +864,23 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                             )}
                         </div>
 
-                        <div style={{ fontSize: appSettings.fontSize }} className={`flex flex-col items-center w-full px-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily} leading-tight`}>
+                        <div 
+                            lang="en"
+                            style={{ 
+                                fontSize: appSettings.fontSize,
+                                hyphens: 'auto',
+                                WebkitHyphens: 'auto',
+                                MozHyphens: 'auto',
+                                msHyphens: 'auto'
+                            }}
+                            className={`flex flex-col items-center w-full px-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily} leading-tight select-none pointer-events-none`}
+                        >
                             <span 
                                 className="font-bold w-full" 
-                                lang="en" 
                                 style={{ 
                                     wordBreak: 'normal',
                                     overflowWrap: 'break-word', 
                                     wordWrap: 'break-word', 
-                                    hyphens: 'auto', 
-                                    WebkitHyphens: 'auto',
-                                    MozHyphens: 'auto',
-                                    msHyphens: 'auto'
                                 }}
                             >
                                 {room.name}

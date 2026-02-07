@@ -95,8 +95,8 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
             }
         };
 
-        const handleMouseUp = () => {
-            if (draggedZone) onDragEnd?.();
+        const handleMouseUp = (e: MouseEvent) => {
+            if (draggedZone) onDragEnd?.(e);
             setDraggedZone(null);
             lastMousePos.current = null;
         };

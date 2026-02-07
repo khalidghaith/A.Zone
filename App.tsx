@@ -89,6 +89,8 @@ export default function App() {
     const [connectionSourceId, setConnectionSourceId] = useState<string | null>(null);
     const [snapGuides, setSnapGuides] = useState<{ x?: number, y?: number } | null>(null);
     const [isZoneDragging, setIsZoneDragging] = useState(false);
+    const [isBubbleDragging, setIsBubbleDragging] = useState(false);
+    const [isInventoryHovered, setIsInventoryHovered] = useState(false);
     const [editingFloorId, setEditingFloorId] = useState<number | null>(null);
     const [hasInitialZoomed, setHasInitialZoomed] = useState(false);
 
@@ -316,6 +318,23 @@ export default function App() {
         return () => clearInterval(interval);
     }, [isMagnetMode]);
 
+    // Inventory Hover Detection during Drag
+    useEffect(() => {
+        if (!isZoneDragging && !isBubbleDragging) {
+            setIsInventoryHovered(false);
+            return;
+        }
+
+        const handleGlobalMouseMove = (e: MouseEvent) => {
+            if (inventoryRef.current) {
+                const rect = inventoryRef.current.getBoundingClientRect();
+                const isOver = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+                setIsInventoryHovered(isOver);
+            }
+        };
+        window.addEventListener('mousemove', handleGlobalMouseMove);
+        return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
+    }, [isZoneDragging, isBubbleDragging]);
 
     // --- Core Handlers ---
     useEffect(() => {
@@ -661,6 +680,29 @@ export default function App() {
         }));
     }, []);
 
+    const handleMoveRoom = useCallback((id: string, x: number, y: number) => {
+        setRooms(prev => {
+            const leader = prev.find(r => r.id === id);
+            if (!leader) return prev;
+            
+            const dx = x - leader.x;
+            const dy = y - leader.y;
+            
+            if (dx === 0 && dy === 0) return prev;
+
+            if (selectedRoomIds.has(id) && selectedRoomIds.size > 1) {
+                return prev.map(r => {
+                    if (selectedRoomIds.has(r.id) && r.floor === currentFloor && r.isPlaced) {
+                        return { ...r, x: r.x + dx, y: r.y + dy };
+                    }
+                    return r;
+                });
+            } else {
+                return prev.map(r => r.id === id ? { ...r, x, y } : r);
+            }
+        });
+    }, [selectedRoomIds, currentFloor]);
+
     const deleteRoom = useCallback((id: string) => {
         addToHistory();
         setRooms(prev => prev.filter(r => r.id !== id));
@@ -741,6 +783,7 @@ export default function App() {
     }, []);
 
     const handleBubbleDragEnd = useCallback((room: Room, e: MouseEvent) => {
+        setIsBubbleDragging(false);
         if (!room || !e) return;
 
         if (inventoryRef.current) {
@@ -751,11 +794,39 @@ export default function App() {
                 e.clientY >= rect.top &&
                 e.clientY <= rect.bottom
             ) {
-                updateRoom(room.id, { isPlaced: false });
-                setSelectedRoomIds(new Set());
+                if (selectedRoomIds.has(room.id) && selectedRoomIds.size > 1) {
+                    setRooms(prev => prev.map(r => selectedRoomIds.has(r.id) ? { ...r, isPlaced: false } : r));
+                    setSelectedRoomIds(new Set());
+                } else {
+                    updateRoom(room.id, { isPlaced: false });
+                    setSelectedRoomIds(new Set());
+                }
             }
         }
-    }, [updateRoom]);
+    }, [updateRoom, selectedRoomIds]);
+
+    const handleZoneDragEnd = useCallback((e: MouseEvent) => {
+        setIsZoneDragging(false);
+        if (selectedZone && inventoryRef.current) {
+             const rect = inventoryRef.current.getBoundingClientRect();
+             if (
+                e.clientX >= rect.left &&
+                e.clientX <= rect.right &&
+                e.clientY >= rect.top &&
+                e.clientY <= rect.bottom
+            ) {
+                // Return zone to inventory
+                addToHistory();
+                setRooms(prev => prev.map(r => {
+                    if (r.zone === selectedZone && r.floor === currentFloor) {
+                        return { ...r, isPlaced: false };
+                    }
+                    return r;
+                }));
+                setSelectedZone(null);
+            }
+        }
+    }, [selectedZone, currentFloor, addToHistory]);
 
     // --- Render Helpers ---
     const selectedRoom = rooms.find(r => selectedRoomIds.has(r.id));
@@ -896,7 +967,7 @@ export default function App() {
                     <>
                         <aside 
                             ref={inventoryRef}
-                            className="w-80 bg-white dark:bg-dark-surface border-r border-slate-200/50 dark:border-dark-border flex flex-col z-30 shadow-[10px_0_30px_rgba(0,0,0,0.02)] translate-x-0 transition-transform duration-500"
+                            className={`w-80 bg-white dark:bg-dark-surface border-r border-slate-200/50 dark:border-dark-border flex flex-col z-30 shadow-[10px_0_30px_rgba(0,0,0,0.02)] translate-x-0 transition-all duration-300 ${isInventoryHovered ? 'ring-2 ring-orange-400 ring-inset bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
                             onDragOver={handleInventoryDragOver}
                             onDrop={handleInventoryDrop}
                         >
@@ -987,7 +1058,7 @@ export default function App() {
                                     onZoneDrag={handleZoneDrag}
                                     onSelectZone={handleZoneClick}
                                     onDragStart={() => { setIsZoneDragging(true); addToHistory(); }}
-                                    onDragEnd={() => setIsZoneDragging(false)}
+                                    onDragEnd={handleZoneDragEnd}
                                     appSettings={appSettings}
                                     zoneColors={zoneColors}
                                 />
@@ -1061,6 +1132,7 @@ export default function App() {
                                         room={room}
                                         zoomScale={scale}
                                         updateRoom={updateRoom}
+                                        onMove={(x, y) => handleMoveRoom(room.id, x, y)}
                                         isSelected={selectedRoomIds.has(room.id)}
                                         isLinkingSource={connectionSourceId === room.id}
                                         onLinkToggle={toggleLink}
@@ -1082,7 +1154,8 @@ export default function App() {
                                         appSettings={appSettings}
                                         zoneColors={zoneColors}
                                         onDragEnd={handleBubbleDragEnd}
-                                        onDragStart={addToHistory}
+                                        onDragStart={() => { setIsBubbleDragging(true); addToHistory(); }}
+                                        isAnyDragging={isBubbleDragging}
                                     />
                                 ))}
                             </div>

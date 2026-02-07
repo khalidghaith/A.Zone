@@ -85,7 +85,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdate
                                 <span>{settings.fontSize}px</span>
                             </div>
                             <input 
-                                type="range" min="8" max="24" step="1" 
+                                type="range" min="4" max="24" step="1" 
                                 value={settings.fontSize} 
                                 onChange={(e) => handleChange('fontSize', parseFloat(e.target.value))}
                                 className="w-full accent-primary"

@@ -4,6 +4,53 @@ import { getConvexHull, createRoundedPath } from './geometry';
 export type ExportFormat = 'png' | 'jpeg' | 'svg' | 'dxf' | 'json';
 const PIXELS_PER_METER = 20;
 
+// Text wrapping helper with literal dash support
+export const wrapText = (text: string, maxWidth: number, fontSize: number, fontFamily: string = 'Inter, sans-serif'): string[] => {
+    if (!text) return [];
+    if (typeof document === 'undefined') return [text];
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return [text];
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = words[0];
+
+    for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = ctx.measureText(currentLine + " " + word).width;
+        if (width < maxWidth) {
+            currentLine += " " + word;
+        } else {
+            lines.push(currentLine);
+            currentLine = word;
+        }
+    }
+    lines.push(currentLine);
+
+    const finalLines: string[] = [];
+    for (const line of lines) {
+        if (ctx.measureText(line).width <= maxWidth) {
+            finalLines.push(line);
+            continue;
+        }
+        let remaining = line;
+        while (ctx.measureText(remaining).width > maxWidth) {
+             let splitIndex = remaining.length - 1;
+             while (splitIndex > 0 && ctx.measureText(remaining.substring(0, splitIndex) + "-").width > maxWidth) {
+                 splitIndex--;
+             }
+             if (splitIndex <= 0) break;
+             finalLines.push(remaining.substring(0, splitIndex) + "-");
+             remaining = remaining.substring(splitIndex);
+        }
+        finalLines.push(remaining);
+    }
+    return finalLines;
+};
+
 // --- Geometry Helpers ---
 
 const calculateCentroid = (points: Point[]): Point => {
@@ -172,7 +219,15 @@ export const handleExport = async (
             const absX = room.x + cx + offsetX;
             const absY = -(room.y + cy + offsetY);
             
-            dxf += `0\nTEXT\n8\nLabels\n10\n${absX}\n20\n${absY}\n40\n${appSettings.fontSize}\n1\n${room.name}\n72\n4\n11\n${absX}\n21\n${absY}\n`;
+            const width = room.polygon ? (Math.max(...room.polygon.map(p => p.x)) - Math.min(...room.polygon.map(p => p.x))) : room.width;
+            const lines = wrapText(room.name, width - 10, appSettings.fontSize);
+            const lineHeight = appSettings.fontSize * 1.2;
+            const totalHeight = lines.length * lineHeight;
+            
+            lines.forEach((line, i) => {
+                const yPos = absY + (totalHeight/2) - (i * lineHeight) - (lineHeight/2);
+                dxf += `0\nTEXT\n8\nLabels\n10\n${absX}\n20\n${yPos}\n40\n${appSettings.fontSize}\n1\n${line}\n72\n4\n11\n${absX}\n21\n${yPos}\n`;
+            });
         });
 
         dxf += `0\nENDSEC\n0\nEOF`;
@@ -267,11 +322,20 @@ export const handleExport = async (
         const cx = (r.polygon ? 0 : r.width/2) + (r.polygon ? calculateCentroid(r.polygon).x : 0);
         const cy = (r.polygon ? 0 : r.height/2) + (r.polygon ? calculateCentroid(r.polygon).y : 0);
 
+        const width = (r.polygon && r.polygon.length > 0) ? 
+            (Math.max(...r.polygon.map(p => p.x)) - Math.min(...r.polygon.map(p => p.x))) : 
+            r.width;
+        const lines = wrapText(r.name, width - 16, appSettings.fontSize);
+        const lineHeight = appSettings.fontSize * 1.2;
+        const startY = (cy - 6) - ((lines.length - 1) * lineHeight) / 2;
+
         svgContent += `
         <g transform="translate(${r.x}, ${r.y})">
             <path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" fill-opacity="${opacity}" />
-            <text x="${cx}" y="${cy - 6}" class="text title" fill="#1e293b">${r.name}</text>
-            <text x="${cx}" y="${cy + 8}" class="text subtitle">${r.area} m²</text>
+            <text x="${cx}" y="${startY}" class="text title" fill="#1e293b">
+                ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : lineHeight}">${line}</tspan>`).join('')}
+            </text>
+            <text x="${cx}" y="${cy + 8 + (lines.length > 1 ? (lines.length * lineHeight)/2 : 0)}" class="text subtitle">${r.area} m²</text>
         </g>`;
     });
 

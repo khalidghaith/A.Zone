@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Room, Point, DiagramStyle, AppSettings, ZoneColor } from '../types';
 import { Link as LinkIcon } from 'lucide-react';
 import { createRoundedPath } from '../utils/geometry';
+import { wrapText } from '../utils/exportSystem';
 
 interface BubbleProps {
     room: Room;
@@ -24,6 +25,7 @@ interface BubbleProps {
     appSettings: AppSettings;
     zoneColors: Record<string, ZoneColor>;
     onDragEnd?: (room: Room, e: MouseEvent) => void;
+    otherRooms?: Room[];
 }
 
 // area utility
@@ -126,12 +128,13 @@ const ROTATE_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.or
 
 const BubbleComponent: React.FC<BubbleProps> = ({
     room, zoomScale, updateRoom, isSelected, onSelect, diagramStyle, snapEnabled, snapPixelUnit,
-    getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors, appSettings, zoneColors, onDragEnd, onDragStart, onMove, isAnyDragging
+    getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors, appSettings, zoneColors, onDragEnd, onDragStart, onMove, isAnyDragging, otherRooms
 }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [isRotating, setIsRotating] = useState(false);
     const [resizeHandle, setResizeHandle] = useState<string | null>(null);
     const [rotateTooltip, setRotateTooltip] = useState<{ x: number, y: number, angle: number } | null>(null);
+    const [snapLines, setSnapLines] = useState<{ x?: number, y?: number }[]>([]);
 
     // Polygon Editing State
     const [hoveredVertex, setHoveredVertex] = useState<number | null>(null);
@@ -197,11 +200,6 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         return createRoundedPath(activePoints, room.style?.cornerRadius ?? appSettings.cornerRadius);
     }, [activePoints, appSettings.cornerRadius, room.style?.cornerRadius, room.shape]);
 
-    const snap = (val: number) => {
-        if (!snapEnabled) return val;
-        return Math.round(val / snapPixelUnit) * snapPixelUnit;
-    };
-
     // Keyboard Listener for Deletion
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -239,57 +237,131 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             const dxWorld = dxScreen / zoomScale;
             const dyWorld = dyScreen / zoomScale;
 
+            const shouldSnap = snapEnabled ? !e.shiftKey : e.shiftKey;
+
+            let currentSnapLines: { x?: number, y?: number }[] = [];
+
             if (!hasMoved.current && (Math.abs(dxScreen) > 2 || Math.abs(dyScreen) > 2)) {
                 hasMoved.current = true;
             }
+
+            // Helper to get snap targets from other rooms
+            const getSnapTargets = () => {
+                const targetsX: number[] = [];
+                const targetsY: number[] = [];
+                if (otherRooms) {
+                    otherRooms.forEach(r => {
+                        if (r.polygon) {
+                            r.polygon.forEach(p => { targetsX.push(r.x + p.x); targetsY.push(r.y + p.y); });
+                        } else {
+                            targetsX.push(r.x, r.x + r.width);
+                            targetsY.push(r.y, r.y + r.height);
+                        }
+                    });
+                }
+                return { x: targetsX, y: targetsY };
+            };
 
             if (resizeHandle) {
                 const s = startDragState.current;
                 const minSize = 20;
                 const areaPx = s.roomW * s.roomH;
 
-                // 1. Calculate target dimensions based on mouse delta and handle direction
-                let targetW = s.roomW;
-                let targetH = s.roomH;
+                // 1. Determine Anchor (Fixed opposite corner)
+                const anchorX = resizeHandle.includes('w') ? s.roomX + s.roomW : s.roomX;
+                const anchorY = resizeHandle.includes('n') ? s.roomY + s.roomH : s.roomY;
 
-                if (resizeHandle.includes('e')) {
-                    targetW = Math.max(minSize, s.roomW + dxWorld);
-                } else {
-                    targetW = Math.max(minSize, s.roomW - dxWorld);
+                // 2. Calculate Raw Target Dimensions based on cursor
+                const startEdgeX = resizeHandle.includes('w') ? s.roomX : s.roomX + s.roomW;
+                const startEdgeY = resizeHandle.includes('n') ? s.roomY : s.roomY + s.roomH;
+                
+                const currentEdgeX = startEdgeX + dxWorld;
+                const currentEdgeY = startEdgeY + dyWorld;
+
+                let rawW = Math.abs(currentEdgeX - anchorX);
+                let rawH = Math.abs(currentEdgeY - anchorY);
+                
+                rawW = Math.max(minSize, rawW);
+                rawH = Math.max(minSize, rawH);
+
+                // 3. Calculate Theoretical Dimensions (Area Preserved)
+                const ratio = rawW / rawH;
+                let tW = Math.sqrt(areaPx * ratio);
+                let tH = areaPx / tW;
+
+                // 4. Identify Moving Edges candidates (Theoretical)
+                const movingEdgeX = resizeHandle.includes('w') ? anchorX - tW : anchorX + tW;
+                const movingEdgeY = resizeHandle.includes('n') ? anchorY - tH : anchorY + tH;
+
+                // 5. Check Snaps
+                let bestSnapDist = appSettings.snapTolerance / zoomScale;
+                let snappedAxis: 'x' | 'y' | null = null;
+                let snapValue = 0;
+
+                if (shouldSnap && appSettings.snapWhileScaling) {
+                    const { x: targetsX, y: targetsY } = getSnapTargets();
+
+                    // Check X Snaps
+                    if (appSettings.snapToObjects) {
+                        for (const tx of targetsX) {
+                            const dist = Math.abs(movingEdgeX - tx);
+                            if (dist < bestSnapDist) {
+                                bestSnapDist = dist;
+                                snappedAxis = 'x';
+                                snapValue = tx;
+                            }
+                        }
+                    }
+                    if (appSettings.snapToGrid) {
+                        const gx = Math.round(movingEdgeX / snapPixelUnit) * snapPixelUnit;
+                        const dist = Math.abs(movingEdgeX - gx);
+                        if (dist < bestSnapDist) {
+                            bestSnapDist = dist;
+                            snappedAxis = 'x';
+                            snapValue = gx;
+                        }
+                    }
+
+                    // Check Y Snaps (competing with X)
+                    if (appSettings.snapToObjects) {
+                        for (const ty of targetsY) {
+                            const dist = Math.abs(movingEdgeY - ty);
+                            if (dist < bestSnapDist) {
+                                bestSnapDist = dist;
+                                snappedAxis = 'y';
+                                snapValue = ty;
+                            }
+                        }
+                    }
+                    if (appSettings.snapToGrid) {
+                        const gy = Math.round(movingEdgeY / snapPixelUnit) * snapPixelUnit;
+                        const dist = Math.abs(movingEdgeY - gy);
+                        if (dist < bestSnapDist) {
+                            bestSnapDist = dist;
+                            snappedAxis = 'y';
+                            snapValue = gy;
+                        }
+                    }
                 }
 
-                if (resizeHandle.includes('s')) {
-                    targetH = Math.max(minSize, s.roomH + dyWorld);
-                } else {
-                    targetH = Math.max(minSize, s.roomH - dyWorld);
+                // 6. Apply Snap
+                if (snappedAxis === 'x') {
+                    tW = Math.max(minSize, Math.abs(snapValue - anchorX));
+                    tH = areaPx / tW;
+                    currentSnapLines = [{ x: resizeHandle.includes('w') ? 0 : tW }];
+                } else if (snappedAxis === 'y') {
+                    tH = Math.max(minSize, Math.abs(snapValue - anchorY));
+                    tW = areaPx / tH;
+                    currentSnapLines = [{ y: resizeHandle.includes('n') ? 0 : tH }];
                 }
 
-                // 2. Snapping
-                if (snapEnabled && appSettings.snapWhileScaling && getSnappedPosition) {
-                    const rawX = resizeHandle.includes('e') ? s.roomX + s.roomW + dxWorld : s.roomX + dxWorld;
-                    const rawY = resizeHandle.includes('s') ? s.roomY + s.roomH + dyWorld : s.roomY + dyWorld;
+                // 7. Finalize
+                const finalW = tW;
+                const finalH = tH;
+                const finalX = resizeHandle.includes('w') ? anchorX - finalW : anchorX;
+                const finalY = resizeHandle.includes('n') ? anchorY - finalH : anchorY;
 
-                    const snapped = getSnappedPosition({ ...room, x: rawX, y: rawY, width: 0, height: 0 }, room.id);
-
-                    if (resizeHandle.includes('e')) targetW = Math.max(minSize, snapped.x - s.roomX);
-                    else targetW = Math.max(minSize, (s.roomX + s.roomW) - snapped.x);
-
-                    if (resizeHandle.includes('s')) targetH = Math.max(minSize, snapped.y - s.roomY);
-                    else targetH = Math.max(minSize, (s.roomY + s.roomH) - snapped.y);
-                }
-
-                // 3. Aspect Ratio Preservation
-                const ratio = targetW / targetH;
-                const nW = Math.sqrt(areaPx * ratio);
-                const nH = areaPx / nW;
-
-                // 4. Adjust Position (if resizing from left or top)
-                let nX = s.roomX;
-                let nY = s.roomY;
-                if (resizeHandle.includes('w')) nX = s.roomX + (s.roomW - nW);
-                if (resizeHandle.includes('n')) nY = s.roomY + (s.roomH - nH);
-
-                updateRoom(room.id, { width: nW, height: nH, x: nX, y: nY });
+                updateRoom(room.id, { width: finalW, height: finalH, x: finalX, y: finalY });
 
             } else if (isRotating) {
                 if (bubbleRef.current) {
@@ -303,7 +375,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                     if (e.shiftKey) {
                         angleDeg = Math.round(angleDeg / 45) * 45;
-                    } else if (snapEnabled) {
+                    } else if (shouldSnap) {
                         angleDeg = Math.round(angleDeg / 5) * 5;
                     }
 
@@ -364,20 +436,80 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     if (index >= newPoints.length) return;
 
                     const v = newPoints[index];
-                    // We apply delta from snapshot
-                    // Note: logic assumes dragging relative to START.
-                    // Since we use polygonSnapshot (original state), we can simply add dxWorld to original pos.
+                    
+                    const rawX = v.x + dxWorld;
+                    const rawY = v.y + dyWorld;
+                    
+                    // Default to grid snap or raw
+                    let nx = rawX;
+                    let ny = rawY;
 
-                    // Optimization: if dragging multiple, snap might behave weirdly if we snap each individually.
-                    // Usually we snap the PRIMARY dragged vertex, and apply the same delta to others?
-                    // Or snap all? Let's snap all for grid alignment consistency.
+                    if (shouldSnap && appSettings.snapToGrid) {
+                        nx = Math.round((rawX + room.x) / snapPixelUnit) * snapPixelUnit - room.x;
+                        ny = Math.round((rawY + room.y) / snapPixelUnit) * snapPixelUnit - room.y;
+                    }
 
-                    let nx = v.x + dxWorld;
-                    let ny = v.y + dyWorld;
+                    if (shouldSnap && appSettings.snapToObjects) {
+                        const tolerance = appSettings.snapTolerance / zoomScale;
+                        let snappedX = false;
+                        let snappedY = false;
 
-                    if (snapEnabled) {
-                        nx = snap(nx);
-                        ny = snap(ny);
+                        // Snap to other vertices
+                        for (let i = 0; i < newPoints.length; i++) {
+                            if (indicesToMove.includes(i)) continue;
+                            const other = newPoints[i];
+                            if (!snappedX && Math.abs(rawX - other.x) < tolerance) {
+                                nx = other.x;
+                                snappedX = true;
+                                currentSnapLines.push({ x: other.x });
+                            }
+                            if (!snappedY && Math.abs(rawY - other.y) < tolerance) {
+                                ny = other.y;
+                                snappedY = true;
+                                currentSnapLines.push({ y: other.y });
+                            }
+                        }
+                        // Snap to local origin
+                        if (!snappedX && Math.abs(rawX) < tolerance) {
+                            nx = 0;
+                            currentSnapLines.push({ x: 0 });
+                        }
+                        if (!snappedY && Math.abs(rawY) < tolerance) {
+                            ny = 0;
+                            currentSnapLines.push({ y: 0 });
+                        }
+
+                        // Snap to Neighbors
+                        if (otherRooms) {
+                            const globalRawX = room.x + rawX;
+                            const globalRawY = room.y + rawY;
+
+                            for (const other of otherRooms) {
+                                const targetsX: number[] = [];
+                                const targetsY: number[] = [];
+                                if (other.polygon) {
+                                    other.polygon.forEach(p => { targetsX.push(other.x + p.x); targetsY.push(other.y + p.y); });
+                                } else {
+                                    targetsX.push(other.x, other.x + other.width);
+                                    targetsY.push(other.y, other.y + other.height);
+                                }
+
+                                if (!snappedX) {
+                                    for (const tx of targetsX) {
+                                        if (Math.abs(globalRawX - tx) < tolerance) {
+                                            nx = tx - room.x; snappedX = true; currentSnapLines.push({ x: nx }); break;
+                                        }
+                                    }
+                                }
+                                if (!snappedY) {
+                                    for (const ty of targetsY) {
+                                        if (Math.abs(globalRawY - ty) < tolerance) {
+                                            ny = ty - room.y; snappedY = true; currentSnapLines.push({ y: ny }); break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     newPoints[index] = { x: nx, y: ny };
@@ -393,41 +525,77 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 const idx1 = draggedEdge;
                 const idx2 = (draggedEdge + 1) % polygonSnapshot.length;
 
-                if (isExtruding) {
-                    const v1 = newPoints[idx1];
-                    const v2 = newPoints[idx2];
+                const moveAndSnap = (v: Point) => {
+                    const rawX = v.x + dxWorld;
+                    const rawY = v.y + dyWorld;
+                    let nx = rawX;
+                    let ny = rawY;
 
-                    let nx1 = v1.x + dxWorld;
-                    let ny1 = v1.y + dyWorld;
-                    let nx2 = v2.x + dxWorld;
-                    let ny2 = v2.y + dyWorld;
-
-                    if (snapEnabled) {
-                        nx1 = snap(nx1); ny1 = snap(ny1);
-                        nx2 = snap(nx2); ny2 = snap(ny2);
+                    if (shouldSnap && appSettings.snapToGrid) {
+                        nx = Math.round((rawX + room.x) / snapPixelUnit) * snapPixelUnit - room.x;
+                        ny = Math.round((rawY + room.y) / snapPixelUnit) * snapPixelUnit - room.y;
                     }
 
-                    newPoints[idx1] = { x: nx1, y: ny1 };
-                    newPoints[idx2] = { x: nx2, y: ny2 };
+                    if (shouldSnap && appSettings.snapToObjects) {
+                        const tolerance = appSettings.snapTolerance / zoomScale;
+                        let snappedX = false;
+                        let snappedY = false;
 
-                } else {
-                    // Standard Edge Drag
-                    const v1 = newPoints[idx1];
-                    const v2 = newPoints[idx2];
+                        for (let i = 0; i < newPoints.length; i++) {
+                            if (i === idx1 || i === idx2) continue;
+                            const other = newPoints[i];
+                            if (!snappedX && Math.abs(rawX - other.x) < tolerance) {
+                                nx = other.x;
+                                snappedX = true;
+                                currentSnapLines.push({ x: other.x });
+                            }
+                            if (!snappedY && Math.abs(rawY - other.y) < tolerance) {
+                                ny = other.y;
+                                snappedY = true;
+                                currentSnapLines.push({ y: other.y });
+                            }
+                        }
+                        // Snap to origin
+                        if (!snappedX && Math.abs(rawX) < tolerance) { nx = 0; currentSnapLines.push({ x: 0 }); }
+                        if (!snappedY && Math.abs(rawY) < tolerance) { ny = 0; currentSnapLines.push({ y: 0 }); }
 
-                    let nx1 = v1.x + dxWorld;
-                    let ny1 = v1.y + dyWorld;
-                    let nx2 = v2.x + dxWorld;
-                    let ny2 = v2.y + dyWorld;
+                        // Snap to Neighbors
+                        if (otherRooms) {
+                            const globalRawX = room.x + rawX;
+                            const globalRawY = room.y + rawY;
 
-                    if (snapEnabled) {
-                        nx1 = snap(nx1); ny1 = snap(ny1);
-                        nx2 = snap(nx2); ny2 = snap(ny2);
+                            for (const other of otherRooms) {
+                                const targetsX: number[] = [];
+                                const targetsY: number[] = [];
+                                if (other.polygon) {
+                                    other.polygon.forEach(p => { targetsX.push(other.x + p.x); targetsY.push(other.y + p.y); });
+                                } else {
+                                    targetsX.push(other.x, other.x + other.width);
+                                    targetsY.push(other.y, other.y + other.height);
+                                }
+
+                                if (!snappedX) {
+                                    for (const tx of targetsX) {
+                                        if (Math.abs(globalRawX - tx) < tolerance) {
+                                            nx = tx - room.x; snappedX = true; currentSnapLines.push({ x: nx }); break;
+                                        }
+                                    }
+                                }
+                                if (!snappedY) {
+                                    for (const ty of targetsY) {
+                                        if (Math.abs(globalRawY - ty) < tolerance) {
+                                            ny = ty - room.y; snappedY = true; currentSnapLines.push({ y: ny }); break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
+                    return { x: nx, y: ny };
+                };
 
-                    newPoints[idx1] = { x: nx1, y: ny1 };
-                    newPoints[idx2] = { x: nx2, y: ny2 };
-                }
+                newPoints[idx1] = moveAndSnap(newPoints[idx1]);
+                newPoints[idx2] = moveAndSnap(newPoints[idx2]);
 
                 const areaPx = room.shape === 'bubble' ? calculateCurvedArea(newPoints) : calculatePolygonArea(newPoints);
                 const newArea = Number((areaPx / (pixelsPerMeter * pixelsPerMeter)).toFixed(2));
@@ -438,17 +606,42 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 let nX = startDragState.current.roomX + dxWorld;
                 let nY = startDragState.current.roomY + dyWorld;
 
-                if (getSnappedPosition) {
-                    const snapped = getSnappedPosition({ ...room, x: nX, y: nY }, room.id);
-                    nX = snapped.x;
-                    nY = snapped.y;
+                if (shouldSnap) {
+                    // Grid Snap
+                    if (appSettings.snapToGrid) {
+                        nX = Math.round(nX / snapPixelUnit) * snapPixelUnit;
+                        nY = Math.round(nY / snapPixelUnit) * snapPixelUnit;
+                    }
+
+                    // Object Snap
+                    if (appSettings.snapToObjects) {
+                        const tolerance = appSettings.snapTolerance / zoomScale;
+                        const { x: targetsX, y: targetsY } = getSnapTargets();
+                        let snappedX = false;
+                        let snappedY = false;
+
+                        // Snap Left/Right edges
+                        for (const tx of targetsX) {
+                            if (!snappedX && Math.abs(nX - tx) < tolerance) { nX = tx; snappedX = true; currentSnapLines.push({ x: tx - nX }); }
+                            if (!snappedX && Math.abs((nX + room.width) - tx) < tolerance) { nX = tx - room.width; snappedX = true; currentSnapLines.push({ x: tx - nX + room.width }); }
+                        }
+
+                        // Snap Top/Bottom edges
+                        for (const ty of targetsY) {
+                            if (!snappedY && Math.abs(nY - ty) < tolerance) { nY = ty; snappedY = true; currentSnapLines.push({ y: ty - nY }); }
+                            if (!snappedY && Math.abs((nY + room.height) - ty) < tolerance) { nY = ty - room.height; snappedY = true; currentSnapLines.push({ y: ty - nY + room.height }); }
+                        }
+                    }
                 }
+
                 if (onMove) {
                     onMove(nX, nY);
                 } else {
                     updateRoom(room.id, { x: nX, y: nY });
                 }
             }
+
+            setSnapLines(currentSnapLines);
         };
 
         const handleMouseUp = (e: MouseEvent) => {
@@ -470,6 +663,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             setResizeHandle(null);
             setDraggedVertex(null);
             setDraggedEdge(null);
+            setSnapLines([]);
             setIsExtruding(false);
             setPolygonSnapshot(null);
             if (getSnappedPosition) getSnappedPosition(room, '');
@@ -483,7 +677,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, isRotating, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition, onDragEnd, onMove, isSelected, onSelect]);
+    }, [isDragging, isRotating, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition, onDragEnd, onMove, isSelected, onSelect, otherRooms, appSettings.snapToObjects, appSettings.snapTolerance, appSettings.snapToGrid, room.x, room.y, room.shape, room.area, pixelsPerMeter]);
 
     const handleResizeStart = (e: React.MouseEvent, handle: string) => {
         e.stopPropagation();
@@ -698,6 +892,10 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const isInteracting = isDragging || isRotating || resizeHandle !== null || draggedVertex !== null || draggedEdge !== null;
     const disableTransition = isInteracting || (isSelected && isAnyDragging);
 
+    const wrappedNameLines = useMemo(() => {
+        return wrapText(room.name, bounds.width - 16, appSettings.fontSize);
+    }, [room.name, bounds.width, appSettings.fontSize]);
+
     return (
         <div
             ref={bubbleRef}
@@ -727,7 +925,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                                     filter: diagramStyle.shadow === 'shadow-md' ? 'drop-shadow(0 4px 6px rgb(0 0 0 / 0.1))' :
                                         diagramStyle.shadow === 'shadow-sm' ? 'drop-shadow(0 1px 2px rgb(0 0 0 / 0.1))' :
                                             diagramStyle.shadow === 'shadow-none' ? 'none' : 'drop-shadow(0 1px 2px rgb(0 0 0 / 0.1))',
-                                    transition: room.shape === 'bubble' && wobbleTime > 0 ? 'none' : 'd 0.3s ease'
+                                    transition: isInteracting ? 'none' : (room.shape === 'bubble' && wobbleTime > 0 ? 'none' : 'd 0.3s ease')
                                 }}
                             />
                             {/* Polygon Edges (Hit Areas for Editing) */}
@@ -780,6 +978,28 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                         }}
                     />
                 )}
+
+                {/* Snap Guides (Shared for all shapes) */}
+                <svg className="overflow-visible absolute top-0 left-0 w-full h-full pointer-events-none">
+                    {snapLines.map((guide, i) => (
+                        <React.Fragment key={i}>
+                            {guide.x !== undefined && (
+                                <line
+                                    x1={guide.x} y1={-10000} x2={guide.x} y2={10000}
+                                    stroke="#3b82f6" strokeWidth={1 / zoomScale} strokeDasharray={`${4 / zoomScale},${4 / zoomScale}`}
+                                    className="pointer-events-none"
+                                />
+                            )}
+                            {guide.y !== undefined && (
+                                <line
+                                    x1={-10000} y1={guide.y} x2={10000} y2={guide.y}
+                                    stroke="#3b82f6" strokeWidth={1 / zoomScale} strokeDasharray={`${4 / zoomScale},${4 / zoomScale}`}
+                                    className="pointer-events-none"
+                                />
+                            )}
+                        </React.Fragment>
+                    ))}
+                </svg>
 
                 {/* Handles - RESIZE ALL CORNERS (NW, NE, SW, SE) */}
                 {!room.polygon && room.shape !== 'bubble' && isSelected && !isDragging && (
@@ -875,16 +1095,11 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                             }}
                             className={`flex flex-col items-center w-full px-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily} leading-tight select-none pointer-events-none`}
                         >
-                            <span 
-                                className="font-bold w-full" 
-                                style={{ 
-                                    wordBreak: 'normal',
-                                    overflowWrap: 'break-word', 
-                                    wordWrap: 'break-word', 
-                                }}
-                            >
-                                {room.name}
-                            </span>
+                            <div className="font-bold w-full">
+                                {wrappedNameLines.map((line, i) => (
+                                    <div key={i}>{line}</div>
+                                ))}
+                            </div>
                             <span className="text-[0.8em] opacity-70 font-sans whitespace-nowrap">{room.area}m²</span>
                         </div>
                     </div>

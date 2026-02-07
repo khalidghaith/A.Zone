@@ -1249,7 +1249,9 @@ export default function App() {
                                 className="absolute inset-0 transition-transform duration-75 origin-top-left pointer-events-none"
                                 style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
                             >
-                                {rooms.filter(r => r.isPlaced && r.floor === currentFloor).map(room => (
+                                {(() => {
+                                    const visibleRooms = rooms.filter(r => r.isPlaced && r.floor === currentFloor);
+                                    return visibleRooms.map(room => (
                                     <Bubble
                                         key={room.id}
                                         room={room}
@@ -1283,8 +1285,10 @@ export default function App() {
                                         onDragEnd={handleBubbleDragEnd}
                                         onDragStart={() => { setIsBubbleDragging(true); addToHistory(); }}
                                         isAnyDragging={isBubbleDragging}
+                                        otherRooms={selectedRoomIds.has(room.id) ? visibleRooms.filter(r => r.id !== room.id) : undefined}
                                     />
-                                ))}
+                                    ));
+                                })()}
                             </div>
 
                             {/* Tools Bar (Top Left) */}

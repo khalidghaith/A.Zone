@@ -90,6 +90,7 @@ export default function App() {
     const [snapGuides, setSnapGuides] = useState<{ x?: number, y?: number } | null>(null);
     const [isZoneDragging, setIsZoneDragging] = useState(false);
     const [editingFloorId, setEditingFloorId] = useState<number | null>(null);
+    const [hasInitialZoomed, setHasInitialZoomed] = useState(false);
 
     const roomsRef = useRef(rooms);
     roomsRef.current = rooms;
@@ -376,7 +377,7 @@ export default function App() {
         isPanning.current = false;
     };
 
-    const handleZoomToFit = () => {
+    const handleZoomToFit = useCallback(() => {
         const currentFloorRooms = rooms.filter(r => r.isPlaced && r.floor === currentFloor);
         if (currentFloorRooms.length === 0) {
             setViewport({
@@ -419,7 +420,19 @@ export default function App() {
                 offset: { x: newOffsetX, y: newOffsetY }
             });
         }
-    };
+    }, [rooms, currentFloor]);
+
+    // Auto-zoom when switching to Canvas
+    useEffect(() => {
+        if (viewMode === 'CANVAS' && !hasInitialZoomed) {
+            const timer = setTimeout(() => {
+                handleZoomToFit();
+                setHasInitialZoomed(true);
+            }, 50);
+            return () => clearTimeout(timer);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewMode, hasInitialZoomed]);
 
     const handlePlaceCenter = (room: Room) => {
         addToHistory();
@@ -610,6 +623,7 @@ export default function App() {
                     if (data.zoneColors) setZoneColors(data.zoneColors);
                     if (data.appSettings) setAppSettings(data.appSettings);
                     
+                    setHasInitialZoomed(false);
                     setViewMode('CANVAS');
                 } else {
                     alert("Invalid project file.");

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Room, Point, DiagramStyle, AppSettings, ZoneColor } from '../types';
 import { Pencil, X, LandPlot, Link as LinkIcon, ArrowUpFromLine, ArrowDownToLine, Square } from 'lucide-react';
 import { createRoundedPath } from '../utils/geometry';
@@ -89,6 +90,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const [isDragging, setIsDragging] = useState(false);
     const [isRotating, setIsRotating] = useState(false);
     const [resizeHandle, setResizeHandle] = useState<string | null>(null);
+    const [rotateTooltip, setRotateTooltip] = useState<{ x: number, y: number, angle: number } | null>(null);
     const [showTools, setShowTools] = useState(false);
 
     // Polygon Editing State
@@ -119,6 +121,19 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const activePoints = useMemo(() => (room.polygon && room.polygon.length > 0) ? room.polygon : [
         { x: 0, y: 0 }, { x: room.width, y: 0 }, { x: room.width, y: room.height }, { x: 0, y: room.height }
     ], [room.polygon, room.width, room.height]);
+
+    const centroid = useMemo(() => calculateCentroid(activePoints), [activePoints]);
+
+    const bounds = useMemo(() => {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        activePoints.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        });
+        return { width: maxX - minX, height: maxY - minY };
+    }, [activePoints]);
 
     // Wobble Animation Loop
     useEffect(() => {
@@ -240,9 +255,14 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     const angleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
                     let angleDeg = angleRad * (180 / Math.PI) + 90; // +90 to make top 0 degrees
 
-                    if (e.shiftKey) angleDeg = Math.round(angleDeg / 15) * 15;
+                    if (e.shiftKey) {
+                        angleDeg = Math.round(angleDeg / 45) * 45;
+                    } else if (snapEnabled) {
+                        angleDeg = Math.round(angleDeg / 5) * 5;
+                    }
 
                     updateRoom(room.id, { rotation: angleDeg });
+                    setRotateTooltip({ x: e.clientX, y: e.clientY, angle: angleDeg });
                 }
             } else if (draggedVertex !== null && polygonSnapshot && room.shape === 'bubble') {
                 // --- BUBBLE PHYSICS: AREA PRESERVATION ---
@@ -389,6 +409,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             }
             setIsDragging(false);
             setIsRotating(false);
+            setRotateTooltip(null);
             setResizeHandle(null);
             setDraggedVertex(null);
             setDraggedEdge(null);
@@ -769,17 +790,19 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                 {/* Content */}
                 <div
-                    className="absolute top-0 left-0 flex flex-col items-center justify-center pointer-events-none"
+                    className="absolute flex flex-col items-center justify-center pointer-events-none"
                     style={{ 
-                        width: room.width, 
-                        height: room.height,
+                        left: centroid.x - bounds.width / 2,
+                        top: centroid.y - bounds.height / 2,
+                        width: bounds.width, 
+                        height: bounds.height,
                         transform: `rotate(${- (room.rotation || 0)}deg)` 
                     }}
                 >
-                    <div className="relative flex flex-col items-center">
+                    <div className="relative flex flex-col items-center w-full">
                         
                         {/* Edit Button - Centered above text */}
-                        <div className={`mb-1 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'} pointer-events-auto`}>
+                        <div className={`absolute bottom-full mb-1 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'} pointer-events-auto`}>
                              <button onClick={(e) => { e.stopPropagation(); setShowTools(!showTools); }} className="p-1.5 bg-white dark:bg-dark-surface border border-slate-200 dark:border-dark-border rounded-full shadow-sm hover:text-orange-600 dark:text-gray-300 flex items-center justify-center hover:scale-110 transition-all">
                                 {showTools ? <X size={12} /> : <Pencil size={12} />}
                             </button>
@@ -818,13 +841,42 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                             )}
                         </div>
 
-                        <div style={{ fontSize: appSettings.fontSize }} className={`flex flex-col items-center p-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily} leading-tight`}>
-                            <span className="font-bold whitespace-nowrap">{room.name}</span>
-                            <span className="text-[0.8em] opacity-70 font-sans">{room.area}m²</span>
+                        <div style={{ fontSize: appSettings.fontSize }} className={`flex flex-col items-center w-full px-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily} leading-tight`}>
+                            <span 
+                                className="font-bold w-full" 
+                                lang="en" 
+                                style={{ 
+                                    wordBreak: 'normal',
+                                    overflowWrap: 'break-word', 
+                                    wordWrap: 'break-word', 
+                                    hyphens: 'auto', 
+                                    WebkitHyphens: 'auto',
+                                    MozHyphens: 'auto',
+                                    msHyphens: 'auto'
+                                }}
+                            >
+                                {room.name}
+                            </span>
+                            <span className="text-[0.8em] opacity-70 font-sans whitespace-nowrap">{room.area}m²</span>
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Rotation Tooltip */}
+            {rotateTooltip && createPortal(
+                <div
+                    className="fixed pointer-events-none z-[100] bg-slate-900/80 text-white text-xs font-bold px-2 py-1 rounded-md backdrop-blur-sm shadow-lg border border-white/10"
+                    style={{
+                        left: rotateTooltip.x,
+                        top: rotateTooltip.y,
+                        transform: 'translate(16px, 16px)'
+                    }}
+                >
+                    {Math.round((rotateTooltip.angle % 360 + 360) % 360)}°
+                </div>,
+                document.body
+            )}
         </div>
     );
 };

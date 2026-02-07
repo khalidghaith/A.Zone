@@ -7,7 +7,7 @@ import { ZoneOverlay } from './components/ZoneOverlay'; // Newly added
 import { ExportModal } from './components/ExportModal';
 import { SettingsModal } from './components/SettingsModal';
 import { applyMagneticPhysics } from './utils/physics'; // Newly added
-import { handleExport } from './utils/exportSystem';
+import { handleExport, getHexColorForZone, getHexBorderForZone } from './utils/exportSystem';
 import { arrangeRooms } from './utils/layout';
 import {
     Plus, Layers, Map as MapIcon, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
@@ -909,7 +909,21 @@ export default function App() {
             if (!selectedRoomIds.has(r.id)) return r;
             if ((r.shape || 'rect') === shape) return r;
 
-            const newRoom = { ...r, shape };
+            const roomStyle = r.style || {};
+            // Only carry over styles that are actually defined (custom overrides).
+            // If they are undefined, we let the new shape inherit from the Zone/AppSettings defaults naturally.
+            const newStyle: any = { ...roomStyle };
+            
+            // Preserve specific overrides if they exist, otherwise leave undefined to use defaults
+            if (roomStyle.fill) newStyle.fill = roomStyle.fill;
+            if (roomStyle.stroke) newStyle.stroke = roomStyle.stroke;
+            if (roomStyle.strokeWidth) newStyle.strokeWidth = roomStyle.strokeWidth;
+            if (roomStyle.opacity) newStyle.opacity = roomStyle.opacity;
+            if (roomStyle.cornerRadius) newStyle.cornerRadius = roomStyle.cornerRadius;
+            if (roomStyle.strokeDasharray) newStyle.strokeDasharray = roomStyle.strokeDasharray;
+
+            // If the original room had no style object, newStyle might be empty, which is perfect.
+            const newRoom = { ...r, shape, style: Object.keys(newStyle).length > 0 ? newStyle : undefined };
 
             if (shape === 'rect') {
                 newRoom.polygon = undefined;

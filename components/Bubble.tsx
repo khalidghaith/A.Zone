@@ -717,9 +717,9 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                         <svg className="overflow-visible">
                             <path
                                 d={polygonPath}
-                                className={room.style ? '' : `${visualStyle.bg.replace('bg-', 'fill-')} ${visualStyle.border.replace('border-', 'stroke-')}`}
+                                className={`${!room.style?.fill ? visualStyle.bg.replace(/bg-/g, 'fill-') : ''} ${!room.style?.stroke ? visualStyle.border.replace(/border-/g, 'stroke-') : ''}`}
                                 strokeWidth={(room.style?.strokeWidth ?? appSettings.strokeWidth) / zoomScale}
-                                strokeDasharray={diagramStyle.sketchy ? `${10 / zoomScale},${10 / zoomScale}` : "none"}
+                                strokeDasharray={room.style?.strokeDasharray ?? (diagramStyle.sketchy ? `${10 / zoomScale},${10 / zoomScale}` : "none")}
                                 fillOpacity={room.style?.opacity ?? diagramStyle.opacity}
                                 fill={room.style?.fill}
                                 stroke={room.style?.stroke}
@@ -768,12 +768,15 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     </div>
                 ) : (
                     <div
-                        className={`absolute top-0 left-0 ${diagramStyle.cornerRadius} ${visualStyle.bg} ${visualStyle.border} ${diagramStyle.shadow} ${isInteracting ? '' : 'transition-all'}`}
+                        className={`absolute top-0 left-0 ${diagramStyle.shadow} ${isInteracting ? '' : 'transition-all'} ${!room.style?.fill ? visualStyle.bg : ''} ${!room.style?.stroke ? visualStyle.border : ''}`}
                         style={{ 
                             width: room.width, height: room.height, 
-                            borderWidth: appSettings.strokeWidth / zoomScale, 
-                            opacity: diagramStyle.opacity,
-                            borderRadius: appSettings.cornerRadius / zoomScale
+                            backgroundColor: room.style?.fill,
+                            borderColor: room.style?.stroke,
+                            borderStyle: 'solid',
+                            borderWidth: (room.style?.strokeWidth ?? appSettings.strokeWidth) / zoomScale, 
+                            opacity: room.style?.opacity ?? diagramStyle.opacity,
+                            borderRadius: (room.style?.cornerRadius ?? appSettings.cornerRadius) / zoomScale
                         }}
                     />
                 )}

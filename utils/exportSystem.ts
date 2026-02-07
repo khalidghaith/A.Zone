@@ -1,9 +1,53 @@
 import { Room, Connection, Point, ZoneColor, AppSettings } from '../types';
-import { downloadDXF } from './dxf';
 import { getConvexHull, createRoundedPath } from './geometry';
 
 export type ExportFormat = 'png' | 'jpeg' | 'svg' | 'dxf' | 'json';
 const PIXELS_PER_METER = 20;
+
+// --- Geometry Helpers ---
+
+const calculateCentroid = (points: Point[]): Point => {
+    let x = 0, y = 0;
+    for (const p of points) {
+        x += p.x;
+        y += p.y;
+    }
+    return { x: x / points.length, y: y / points.length };
+};
+
+// Generate Bezier commands for smooth bubble curves (Catmull-Rom to Cubic Bezier)
+const getBubblePathCommands = (points: Point[]) => {
+    const cmds: { type: 'M' | 'C', values: number[] }[] = [];
+    if (points.length < 3) return cmds;
+
+    cmds.push({ type: 'M', values: [points[0].x, points[0].y] });
+
+    for (let i = 0; i < points.length; i++) {
+        const p0 = points[(i - 1 + points.length) % points.length];
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        const p3 = points[(i + 2) % points.length];
+
+        // Catmull-Rom control points
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = p1.y + (p2.y - p0.y) / 6;
+
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+        cmds.push({ type: 'C', values: [cp1x, cp1y, cp2x, cp2y, p2.x, p2.y] });
+    }
+    return cmds;
+};
+
+const triggerDownload = (url: string, filename: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+};
 
 export const handleExport = async (
     format: ExportFormat,
@@ -16,6 +60,7 @@ export const handleExport = async (
     floors: { id: number; label: string }[],
     appSettings: AppSettings
 ) => {
+    // --- JSON Export ---
     if (format === 'json') {
         const data = {
             version: 1,
@@ -34,27 +79,27 @@ export const handleExport = async (
         return;
     }
 
-    if (format === 'dxf') {
-        downloadDXF(projectName, rooms);
-        return;
-    }
-
     const visibleRooms = rooms.filter(r => r.isPlaced && r.floor === currentFloor);
     if (visibleRooms.length === 0) {
         alert("No visible rooms to export.");
         return;
     }
 
-    // Calculate bounding box
+    // 1. Calculate Bounds
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     visibleRooms.forEach(r => {
-        minX = Math.min(minX, r.x);
-        minY = Math.min(minY, r.y);
-        maxX = Math.max(maxX, r.x + r.width);
-        maxY = Math.max(maxY, r.y + r.height);
+        const pts = r.polygon || [
+            { x: 0, y: 0 }, { x: r.width, y: 0 }, 
+            { x: r.width, y: r.height }, { x: 0, y: r.height }
+        ];
+        pts.forEach(p => {
+            minX = Math.min(minX, r.x + p.x);
+            minY = Math.min(minY, r.y + p.y);
+            maxX = Math.max(maxX, r.x + p.x);
+            maxY = Math.max(maxY, r.y + p.y);
+        });
     });
 
-    // Add padding
     const padding = 50;
     minX -= padding;
     minY -= padding;
@@ -62,36 +107,110 @@ export const handleExport = async (
     maxY += padding + 50;
     const width = maxX - minX;
     const height = maxY - minY;
+    const offsetX = -minX;
+    const offsetY = -minY;
 
-    // Generate SVG Content
-    let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${minX} ${minY} ${width} ${height}">`;
-    
-    // Background
-    // For JPEG, we use the canvas background color. For PNG/SVG, we keep it transparent.
-    if (format === 'jpeg') {
-        const bgColor = darkMode ? '#1a1a1a' : '#f0f2f5';
-        svgContent += `<rect x="${minX}" y="${minY}" width="${width}" height="${height}" fill="${bgColor}" />`;
+    // --- DXF Export ---
+    if (format === 'dxf') {
+        let dxf = `0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n`;
+        
+        visibleRooms.forEach(room => {
+            // Draw Shape
+            if (room.shape === 'bubble' && room.polygon) {
+                // Export as High-Res Polyline to approximate curve
+                const cmds = getBubblePathCommands(room.polygon);
+                // We need to sample the Bezier curves. 
+                // A simple way is to sample t from 0 to 1 for each C command.
+                const points: Point[] = [];
+                
+                // Start point
+                if (cmds.length > 0 && cmds[0].type === 'M') {
+                    // M is start
+                }
+
+                // Re-iterate polygon points to generate curve samples directly
+                for (let i = 0; i < room.polygon.length; i++) {
+                    const p0 = room.polygon[(i - 1 + room.polygon.length) % room.polygon.length];
+                    const p1 = room.polygon[i];
+                    const p2 = room.polygon[(i + 1) % room.polygon.length];
+                    const p3 = room.polygon[(i + 2) % room.polygon.length];
+
+                    const cp1x = p1.x + (p2.x - p0.x) / 6;
+                    const cp1y = p1.y + (p2.y - p0.y) / 6;
+                    const cp2x = p2.x - (p3.x - p1.x) / 6;
+                    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+                    // Sample 10 points per segment
+                    for (let t = 0; t < 1; t += 0.1) {
+                        const it = 1 - t;
+                        const x = it*it*it*p1.x + 3*it*it*t*cp1x + 3*it*t*t*cp2x + t*t*t*p2.x;
+                        const y = it*it*it*p1.y + 3*it*it*t*cp1y + 3*it*t*t*cp2y + t*t*t*p2.y;
+                        points.push({ x: room.x + x, y: room.y + y });
+                    }
+                }
+
+                dxf += `0\nLWPOLYLINE\n8\n${room.zone}\n90\n${points.length}\n70\n1\n`; // Closed
+                points.forEach(p => {
+                    dxf += `10\n${p.x + offsetX}\n20\n${-(p.y + offsetY)}\n`; // Invert Y for DXF
+                });
+
+            } else {
+                // Rect/Polygon
+                const pts = room.polygon || [
+                    { x: 0, y: 0 }, { x: room.width, y: 0 }, 
+                    { x: room.width, y: room.height }, { x: 0, y: room.height }
+                ];
+                dxf += `0\nLWPOLYLINE\n8\n${room.zone}\n90\n${pts.length}\n70\n1\n`;
+                pts.forEach(p => {
+                    dxf += `10\n${room.x + p.x + offsetX}\n20\n${-(room.y + p.y + offsetY)}\n`;
+                });
+            }
+
+            // Text Label
+            const cx = (room.polygon ? 0 : room.width/2) + (room.polygon ? calculateCentroid(room.polygon).x : 0);
+            const cy = (room.polygon ? 0 : room.height/2) + (room.polygon ? calculateCentroid(room.polygon).y : 0);
+            const absX = room.x + cx + offsetX;
+            const absY = -(room.y + cy + offsetY);
+            
+            dxf += `0\nTEXT\n8\nLabels\n10\n${absX}\n20\n${absY}\n40\n${appSettings.fontSize}\n1\n${room.name}\n72\n4\n11\n${absX}\n21\n${absY}\n`;
+        });
+
+        dxf += `0\nENDSEC\n0\nEOF`;
+        const blob = new Blob([dxf], { type: 'application/dxf' });
+        const url = URL.createObjectURL(blob);
+        triggerDownload(url, `${projectName}-floor-${currentFloor}.dxf`);
+        return;
     }
 
-    // Zones
+    // --- SVG Generation (Used for SVG, PNG, JPEG) ---
+    let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-offsetX} ${-offsetY} ${width} ${height}">
+        <style>
+            .text { font-family: 'Inter', sans-serif; text-anchor: middle; dominant-baseline: middle; }
+            .title { font-weight: bold; font-size: ${appSettings.fontSize}px; }
+            .subtitle { font-size: ${appSettings.fontSize * 0.8}px; fill: #666; }
+        </style>`;
+    
+    // Background
+    if (format === 'jpeg') {
+        const bgColor = darkMode ? '#1a1a1a' : '#f0f2f5';
+        svgContent += `<rect x="${-offsetX}" y="${-offsetY}" width="${width}" height="${height}" fill="${bgColor}" />`;
+    }
+
+    // Zones (Convex Hulls)
     const zones: Record<string, Point[]> = {};
-    const zonePadding = 10;
 
     visibleRooms.forEach(r => {
         if (!zones[r.zone]) zones[r.zone] = [];
         
         if (r.polygon && r.polygon.length > 0) {
             r.polygon.forEach(p => {
-                zones[r.zone].push({ x: r.x + p.x - zonePadding, y: r.y + p.y - zonePadding });
-                zones[r.zone].push({ x: r.x + p.x + zonePadding, y: r.y + p.y - zonePadding });
-                zones[r.zone].push({ x: r.x + p.x + zonePadding, y: r.y + p.y + zonePadding });
-                zones[r.zone].push({ x: r.x + p.x - zonePadding, y: r.y + p.y + zonePadding });
+                zones[r.zone].push({ x: r.x + p.x, y: r.y + p.y });
             });
         } else {
-            zones[r.zone].push({ x: r.x - zonePadding, y: r.y - zonePadding });
-            zones[r.zone].push({ x: r.x + r.width + zonePadding, y: r.y - zonePadding });
-            zones[r.zone].push({ x: r.x + r.width + zonePadding, y: r.y + r.height + zonePadding });
-            zones[r.zone].push({ x: r.x - zonePadding, y: r.y + r.height + zonePadding });
+            zones[r.zone].push({ x: r.x, y: r.y });
+            zones[r.zone].push({ x: r.x + r.width, y: r.y });
+            zones[r.zone].push({ x: r.x + r.width, y: r.y + r.height });
+            zones[r.zone].push({ x: r.x, y: r.y + r.height });
         }
     });
 
@@ -100,7 +219,7 @@ export const handleExport = async (
         const hull = getConvexHull(points);
         const d = createRoundedPath(hull, 12);
         const color = getHexColorForZone(zone, zoneColors);
-        svgContent += `<path d="${d}" fill="${color}" fill-opacity="0.5" stroke="${color}" stroke-width="2" stroke-dasharray="10,10" stroke-opacity="0.6" />`;
+        svgContent += `<path d="${d}" fill="${color}" fill-opacity="0.1" stroke="${color}" stroke-width="2" stroke-dasharray="10,10" stroke-opacity="0.6" />`;
     });
 
     // Connections
@@ -118,20 +237,42 @@ export const handleExport = async (
 
     // Rooms
     visibleRooms.forEach(r => {
-        const fill = getHexColorForZone(r.zone, zoneColors);
+        const fill = r.style?.fill || getHexColorForZone(r.zone, zoneColors);
+        const stroke = r.style?.stroke || "#334155";
+        const strokeWidth = r.style?.strokeWidth ?? appSettings.strokeWidth;
+        const opacity = r.style?.opacity ?? 0.9;
+        let d = "";
         
-        if (r.polygon) {
-            const points = r.polygon.map(p => `${r.x + p.x},${r.y + p.y}`).join(' ');
-            svgContent += `<polygon points="${points}" fill="${fill}" stroke="#334155" stroke-width="2" fill-opacity="0.5" />`;
+        if (r.shape === 'bubble' && r.polygon) {
+            const cmds = getBubblePathCommands(r.polygon);
+            cmds.forEach(cmd => {
+                if (cmd.type === 'M') d += `M ${cmd.values[0]} ${cmd.values[1]} `;
+                if (cmd.type === 'C') d += `C ${cmd.values[0]} ${cmd.values[1]}, ${cmd.values[2]} ${cmd.values[3]}, ${cmd.values[4]} ${cmd.values[5]} `;
+            });
+            d += "Z";
+        } else if (r.polygon) {
+            d = `M ${r.polygon[0].x} ${r.polygon[0].y} ` + r.polygon.slice(1).map(p => `L ${p.x} ${p.y}`).join(" ") + " Z";
         } else {
-            svgContent += `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="10" fill="${fill}" stroke="#334155" stroke-width="2" fill-opacity="0.5" />`;
+            const radius = r.style?.cornerRadius || 0;
+            if (radius > 0) {
+                const w = r.width;
+                const h = r.height;
+                const rEff = Math.min(radius, w / 2, h / 2);
+                d = `M ${rEff} 0 H ${w - rEff} Q ${w} 0 ${w} ${rEff} V ${h - rEff} Q ${w} ${h} ${w - rEff} ${h} H ${rEff} Q 0 ${h} 0 ${h - rEff} V ${rEff} Q 0 0 ${rEff} 0 Z`;
+            } else {
+                d = `M 0 0 H ${r.width} V ${r.height} H 0 Z`;
+            }
         }
 
-        // Text
-        const cx = r.x + r.width / 2;
-        const cy = r.y + r.height / 2;
-        svgContent += `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif" font-size="14" font-weight="bold" fill="#1e293b">${r.name}</text>`;
-        svgContent += `<text x="${cx}" y="${cy + 16}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif" font-size="10" fill="#64748b">${r.area} m²</text>`;
+        const cx = (r.polygon ? 0 : r.width/2) + (r.polygon ? calculateCentroid(r.polygon).x : 0);
+        const cy = (r.polygon ? 0 : r.height/2) + (r.polygon ? calculateCentroid(r.polygon).y : 0);
+
+        svgContent += `
+        <g transform="translate(${r.x}, ${r.y})">
+            <path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" fill-opacity="${opacity}" />
+            <text x="${cx}" y="${cy - 6}" class="text title" fill="#1e293b">${r.name}</text>
+            <text x="${cx}" y="${cy + 8}" class="text subtitle">${r.area} m²</text>
+        </g>`;
     });
 
     // Scale Bar (Bottom Right)
@@ -157,7 +298,7 @@ export const handleExport = async (
         return;
     }
 
-    // Convert to Image
+    // --- PNG / JPEG Export ---
     const img = new Image();
     img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgContent)));
     
@@ -173,28 +314,51 @@ export const handleExport = async (
     if (!ctx) return;
 
     ctx.scale(scaleFactor, scaleFactor);
+    ctx.translate(offsetX, offsetY); // Adjust for negative coordinates in SVG viewBox
 
     if (format === 'jpeg') {
         // Background already in SVG for JPEG, but ensure canvas is opaque if needed
-        // SVG draw will cover it.
+        ctx.fillStyle = darkMode ? '#1a1a1a' : '#f0f2f5';
+        ctx.fillRect(-offsetX, -offsetY, width, height);
     }
     
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(img, -offsetX, -offsetY, width, height);
     
     const dataUrl = canvas.toDataURL(`image/${format}`);
     triggerDownload(dataUrl, `${projectName}-floor-${currentFloor}.${format}`);
 };
 
-const triggerDownload = (url: string, filename: string) => {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-};
+export const getHexColorForZone = (zone: string, zoneColors: Record<string, ZoneColor>) => {
+    // 1. Try to resolve from zoneColors config first
+    if (zoneColors[zone]) {
+        const bgClass = zoneColors[zone].bg;
+        const tailwindMap: Record<string, string> = {
+            'bg-blue-100': '#dbeafe',
+            'bg-green-100': '#dcfce7',
+            'bg-orange-100': '#ffedd5',
+            'bg-purple-100': '#f3e8ff',
+            'bg-pink-100': '#fce7f3',
+            'bg-slate-100': '#f1f5f9',
+            'bg-red-100': '#fee2e2',
+            'bg-yellow-100': '#fef9c3',
+            'bg-teal-100': '#ccfbf1',
+            'bg-indigo-100': '#e0e7ff',
+            'bg-cyan-100': '#cffafe',
+            'bg-lime-100': '#ecfccb',
+            'bg-emerald-100': '#d1fae5',
+            'bg-sky-100': '#e0f2fe',
+            'bg-violet-100': '#ede9fe',
+            'bg-fuchsia-100': '#fae8ff',
+            'bg-rose-100': '#ffe4e6',
+            'bg-gray-100': '#f3f4f6',
+            'bg-neutral-100': '#f5f5f5',
+            'bg-stone-100': '#f5f5f4',
+            'bg-zinc-100': '#f4f4f5',
+            'bg-amber-100': '#fef3c7',
+        };
+        if (tailwindMap[bgClass]) return tailwindMap[bgClass];
+    }
 
-const getHexColorForZone = (zone: string, zoneColors: Record<string, ZoneColor>) => {
     // Simple mapping based on standard tailwind colors often used
     const map: Record<string, string> = {
         'Public': '#dbeafe', // blue-100
@@ -216,4 +380,43 @@ const getHexColorForZone = (zone: string, zoneColors: Record<string, ZoneColor>)
     }
     const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
     return '#' + "00000".substring(0, 6 - c.length) + c;
+};
+
+export const getHexBorderForZone = (zone: string, zoneColors?: Record<string, ZoneColor>) => {
+    if (zoneColors && zoneColors[zone]) {
+        // Try to derive border from text color or explicit border if available
+        const classKey = zoneColors[zone].border || zoneColors[zone].text?.replace('text-', 'border-') || 'border-slate-500';
+        const tailwindMap: Record<string, string> = {
+            'border-blue-500': '#3b82f6',
+            'border-blue-600': '#2563eb',
+            'border-green-500': '#22c55e',
+            'border-green-600': '#16a34a',
+            'border-orange-500': '#f97316',
+            'border-orange-600': '#ea580c',
+            'border-purple-500': '#a855f7',
+            'border-purple-600': '#9333ea',
+            'border-pink-500': '#ec4899',
+            'border-pink-600': '#db2777',
+            'border-slate-500': '#64748b',
+            'border-slate-600': '#475569',
+            'border-red-500': '#ef4444',
+            'border-red-600': '#dc2626',
+            'border-yellow-500': '#eab308',
+            'border-yellow-600': '#ca8a04',
+            'border-gray-500': '#6b7280',
+            'border-gray-600': '#4b5563',
+        };
+        if (tailwindMap[classKey]) return tailwindMap[classKey];
+    }
+
+    const map: Record<string, string> = {
+        'Public': '#3b82f6', // blue-500
+        'Private': '#ec4899', // pink-500
+        'Service': '#64748b', // slate-500
+        'Circulation': '#f97316', // orange-500
+        'Outdoor': '#22c55e', // green-500
+        'Default': '#64748b' // slate-500
+    };
+    if (map[zone]) return map[zone];
+    return '#64748b';
 };

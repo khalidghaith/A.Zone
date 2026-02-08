@@ -79,7 +79,7 @@ export default function App() {
     const [initialData] = useState(() => {
         if (typeof window === 'undefined') return null;
         try {
-            const saved = localStorage.getItem('A_ZONE_PROJECT_AUTOSAVE');
+            const saved = localStorage.getItem('SOAP_PROJECT_AUTOSAVE');
             return saved ? JSON.parse(saved) : null;
         } catch (e) {
             console.error("Failed to load autosave", e);
@@ -95,7 +95,7 @@ export default function App() {
     const [zoneColors, setZoneColors] = useState<Record<string, ZoneColor>>(initialData?.zoneColors || ZONE_COLORS);
 
     // API Key State
-    const [apiKey, setApiKey] = useState(() => localStorage.getItem('A_ZONE_GEMINI_KEY') || import.meta.env.VITE_GEMINI_API_KEY || "");
+    const [apiKey, setApiKey] = useState(() => localStorage.getItem('SOAP_GEMINI_KEY') || import.meta.env.VITE_GEMINI_API_KEY || "");
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -149,7 +149,7 @@ export default function App() {
     // Dark Mode Local State
     const [darkMode, setDarkMode] = useState(() => {
         if (typeof window !== 'undefined') {
-            return localStorage.getItem('A_ZONE_DARK_MODE') === 'true';
+            return localStorage.getItem('SOAP_DARK_MODE') === 'true';
         }
         return false;
     });
@@ -157,10 +157,10 @@ export default function App() {
     useEffect(() => {
         if (darkMode) {
             document.documentElement.classList.add('dark');
-            localStorage.setItem('A_ZONE_DARK_MODE', 'true');
+            localStorage.setItem('SOAP_DARK_MODE', 'true');
         } else {
             document.documentElement.classList.remove('dark');
-            localStorage.setItem('A_ZONE_DARK_MODE', 'false');
+            localStorage.setItem('SOAP_DARK_MODE', 'false');
         }
     }, [darkMode]);
 
@@ -175,7 +175,7 @@ export default function App() {
             floors,
             currentFloor
         };
-        localStorage.setItem('A_ZONE_PROJECT_AUTOSAVE', JSON.stringify(saveData));
+        localStorage.setItem('SOAP_PROJECT_AUTOSAVE', JSON.stringify(saveData));
     }, [projectName, rooms, connections, zoneColors, appSettings, floors, currentFloor]);
 
     // --- History System ---
@@ -251,7 +251,7 @@ export default function App() {
 
     const handleResetProject = () => {
         if (window.confirm("Are you sure you want to reset the project? This will clear all data and cannot be undone.")) {
-            localStorage.removeItem('A_ZONE_PROJECT_AUTOSAVE');
+            localStorage.removeItem('SOAP_PROJECT_AUTOSAVE');
             setProjectName("New Project");
             setRooms([]);
             setConnections([]);
@@ -783,7 +783,7 @@ export default function App() {
 
     const handleSaveApiKey = (key: string) => {
         setApiKey(key);
-        localStorage.setItem('A_ZONE_GEMINI_KEY', key);
+        localStorage.setItem('SOAP_GEMINI_KEY', key);
     };
 
     const toggleLink = (roomId: string) => {
@@ -986,7 +986,7 @@ export default function App() {
                         </div>
                         <div>
                             <input className="font-black text-slate-900 dark:text-gray-100 tracking-tight leading-none bg-transparent border-none focus:outline-none focus:ring-0 w-full p-0 text-sm" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
-                            <p className="text-[9px] font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest">A.Zone Project</p>
+                            <p className="text-[9px] font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest">SOAP Project</p>
                         </div>
                     </div>
 

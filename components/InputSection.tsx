@@ -49,8 +49,8 @@ export const InputSection: React.FC<InputSectionProps> = ({ onDataParsed, apiKey
   return (
     <div className="h-full flex flex-col items-center justify-center p-8 max-w-xl mx-auto space-y-6">
       <div className="text-center">
-        <h1 className="text-5xl font-black text-slate-900 tracking-tight">A.Zone</h1>
-        <p className="text-slate-500 font-medium mt-2">AI-Driven Architectural Space Planner</p>
+        <h1 className="text-5xl font-black text-slate-900 tracking-tight">SOAP</h1>
+        <p className="text-slate-500 font-medium mt-2">Spacial Organization & Architectural Programming</p>
       </div>
 
       <div className="w-full bg-white p-6 rounded-3xl shadow-xl border border-slate-200">

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Room, ZoneColor } from '../types';
 import {
     X, Search, Trash2, LayoutGrid,
-    ChevronDown, Plus, Wand2
+    ChevronDown, ChevronRight, Plus, Wand2, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { ApiKeyModal } from './ApiKeyModal';
 import { analyzeProgram } from '../services/geminiService';
@@ -67,6 +67,10 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [showApiKeySettings, setShowApiKeySettings] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    
+    // Sorting & Grouping State
+    const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'area' | 'zone'; direction: 'asc' | 'desc' }>({ key: 'zone', direction: 'asc' });
+    const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set());
 
     const totalsByZone = rooms.reduce((acc, r) => {
         acc[r.zone] = (acc[r.zone] || 0) + r.area;
@@ -75,11 +79,66 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
 
     const totalArea = rooms.reduce((acc, r) => acc + r.area, 0);
 
-    const filteredRooms = useMemo(() => {
-        if (!searchQuery.trim()) return rooms;
-        const lower = searchQuery.toLowerCase();
-        return rooms.filter(r => r.name.toLowerCase().includes(lower));
-    }, [rooms, searchQuery]);
+    // Process Data: Filter -> Group -> Sort
+    const processedData = useMemo(() => {
+        // 1. Filter
+        let data = rooms;
+        if (searchQuery.trim()) {
+            const lower = searchQuery.toLowerCase();
+            data = data.filter(r => r.name.toLowerCase().includes(lower));
+        }
+
+        // 2. Group
+        const groups: Record<string, Room[]> = {};
+        data.forEach(r => {
+            if (!groups[r.zone]) groups[r.zone] = [];
+            groups[r.zone].push(r);
+        });
+
+        // 3. Sort Groups (Zones)
+        let sortedZones = Object.keys(groups);
+        if (sortConfig.key === 'zone') {
+            sortedZones.sort((a, b) => {
+                return sortConfig.direction === 'asc' ? a.localeCompare(b) : b.localeCompare(a);
+            });
+        } else {
+            sortedZones.sort(); // Default alphabetical for zones if sorting by other columns
+        }
+
+        // 4. Sort Rows within Groups & Construct Result
+        return sortedZones.map(zone => {
+            const zoneRooms = groups[zone];
+            const zoneTotalArea = zoneRooms.reduce((sum, r) => sum + r.area, 0);
+            
+            if (sortConfig.key === 'name') {
+                zoneRooms.sort((a, b) => sortConfig.direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
+            } else if (sortConfig.key === 'area') {
+                zoneRooms.sort((a, b) => sortConfig.direction === 'asc' ? a.area - b.area : b.area - a.area);
+            }
+            
+            return { zone, rooms: zoneRooms, totalArea: zoneTotalArea };
+        });
+    }, [rooms, searchQuery, sortConfig]);
+
+    const handleHeaderClick = (key: 'name' | 'area' | 'zone') => {
+        setSortConfig(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+        }));
+    };
+
+    const toggleZone = (zone: string) => {
+        const next = new Set(collapsedZones);
+        if (next.has(zone)) next.delete(zone);
+        else next.add(zone);
+        setCollapsedZones(next);
+    };
+
+    const handleRenameZone = (oldZone: string, newZone: string) => {
+        if (!newZone || oldZone === newZone) return;
+        // Update all rooms in this zone
+        setRooms(prev => prev.map(r => r.zone === oldZone ? { ...r, zone: newZone } : r));
+    };
 
     const handleAiGenerate = async () => {
         if (!apiKey) {
@@ -149,20 +208,26 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                     {/* Table */}
                     <div className="flex-1 bg-white dark:bg-dark-surface rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border overflow-hidden flex flex-col transition-colors">
                         <div className="overflow-y-auto flex-1">
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50 dark:bg-white/5 sticky top-0 z-10 border-b border-slate-200 dark:border-dark-border">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="bg-slate-50 dark:bg-white/5 sticky top-0 z-10 border-b border-slate-200 dark:border-dark-border backdrop-blur-md">
                                     <tr>
-                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16">#</th>
-                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Space Name</th>
-                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-32">Area (m²)</th>
-                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-48">Zone Category</th>
-                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-20 text-center">Action</th>
+                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-12 text-center">#</th>
+                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-orange-600 transition-colors group select-none" onClick={() => handleHeaderClick('name')}>
+                                            <div className="flex items-center gap-1">Space Name {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}</div>
+                                        </th>
+                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-32 cursor-pointer hover:text-orange-600 transition-colors group select-none" onClick={() => handleHeaderClick('area')}>
+                                            <div className="flex items-center gap-1">Area (m²) {sortConfig.key === 'area' && (sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}</div>
+                                        </th>
+                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-48 cursor-pointer hover:text-orange-600 transition-colors group select-none" onClick={() => handleHeaderClick('zone')}>
+                                            <div className="flex items-center gap-1">Zone {sortConfig.key === 'zone' && (sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}</div>
+                                        </th>
+                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16 text-center">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                     {rooms.length === 0 ? (
                                         <tr>
-                                            <td colSpan={5} className="py-20 text-center text-slate-400">
+                                            <td colSpan={5} className="py-24 text-center text-slate-400">
                                                 <div className="flex flex-col items-center gap-2">
                                                     <LayoutGrid size={40} className="mb-2 opacity-20 text-orange-500" />
                                                     <p className="text-sm font-medium">No spaces defined yet.</p>
@@ -170,55 +235,90 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                                 </div>
                                             </td>
                                         </tr>
-                                    ) : filteredRooms.length === 0 ? (
+                                    ) : processedData.length === 0 ? (
                                         <tr>
-                                            <td colSpan={5} className="py-20 text-center text-slate-400">
+                                            <td colSpan={5} className="py-24 text-center text-slate-400">
                                                 <p className="text-sm font-medium">No spaces match your search.</p>
                                             </td>
                                         </tr>
                                     ) : null}
-                                    {filteredRooms.map((room, idx) => (
-                                        <tr key={room.id} className="group hover:bg-slate-50/80 dark:hover:bg-white/5 transition-colors">
-                                            <td className="px-8 py-4 text-xs font-mono text-slate-400">{idx + 1}</td>
-                                            <td className="px-8 py-4">
-                                                <NameInput
-                                                    value={room.name}
-                                                    onChange={(e) => updateRoom(room.id, { name: e.target.value })}
-                                                    onFocus={onInteractionStart}
-                                                    highlight={searchQuery}
-                                                    placeholder="Space Name"
-                                                />
-                                            </td>
-                                            <td className="px-8 py-4">
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="number"
-                                                        className="w-20 bg-slate-100/50 dark:bg-white/5 rounded-lg px-3 py-2 text-sm font-black text-slate-600 dark:text-gray-300 focus:outline-none focus:bg-white dark:focus:bg-white/10 focus:ring-1 focus:ring-orange-500 transition-all text-right"
-                                                        value={room.area}
-                                                        onChange={(e) => updateRoom(room.id, { area: Number(e.target.value) })}
-                                                        onFocus={onInteractionStart}
-                                                    />
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-4">
-                                                <div className="relative">
-                                                    <select
-                                                        className={`w-full appearance-none pl-3 pr-8 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider focus:outline-none cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-white/20 focus:border-orange-500 transition-all ${zoneColors[room.zone]?.bg} ${zoneColors[room.zone]?.text}`}
-                                                        value={room.zone}
-                                                        onChange={(e) => updateRoom(room.id, { zone: e.target.value })}
-                                                        onFocus={onInteractionStart}
-                                                    >
-                                                        {Object.keys(zoneColors).map(z => <option key={z} value={z}>{z}</option>)}
-                                                    </select>
-                                                    <ChevronDown size={12} className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${zoneColors[room.zone]?.text}`} />
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-4 text-center">
-                                                <button onClick={() => deleteRoom(room.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100">
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </td>
-                                        </tr>
+                                    {processedData.map((group) => (
+                                        <React.Fragment key={group.zone}>
+                                            {/* Zone Header Row */}
+                                            <tr className="bg-slate-50/80 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors group">
+                                                <td className="px-4 py-2 text-center cursor-pointer" onClick={() => toggleZone(group.zone)}>
+                                                    {collapsedZones.has(group.zone) ? <ChevronRight size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-2 h-2 rounded-full ${zoneColors[group.zone]?.bg || 'bg-slate-300'}`} />
+                                                        <input 
+                                                            className="bg-transparent font-black text-xs text-slate-600 dark:text-gray-300 focus:outline-none focus:text-orange-600 uppercase tracking-wider w-full"
+                                                            value={group.zone}
+                                                            onChange={(e) => handleRenameZone(group.zone, e.target.value)}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            placeholder="Zone Name"
+                                                        />
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <span className="text-xs font-black text-slate-500 dark:text-gray-400">{group.totalArea}</span>
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{group.rooms.length} Spaces</span>
+                                                </td>
+                                                <td className="px-4 py-2 text-center">
+                                                    <button onClick={() => addRoom({ zone: group.zone })} className="p-1 text-slate-400 hover:text-orange-600 transition-colors opacity-0 group-hover:opacity-100" title="Add Space to Zone">
+                                                        <Plus size={14} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            
+                                            {/* Space Rows */}
+                                            {!collapsedZones.has(group.zone) && group.rooms.map((room, idx) => (
+                                                <tr key={room.id} className="group/row hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                                                    <td className="px-4 py-1.5 text-[10px] font-mono text-slate-300 text-center">{idx + 1}</td>
+                                                    <td className="px-4 py-1.5">
+                                                        <NameInput
+                                                            value={room.name}
+                                                            onChange={(e: any) => updateRoom(room.id, { name: e.target.value })}
+                                                            onFocus={onInteractionStart}
+                                                            highlight={searchQuery}
+                                                            placeholder="Space Name"
+                                                        />
+                                                    </td>
+                                                    <td className="px-4 py-1.5">
+                                                        <div className="flex items-center gap-1">
+                                                            <input
+                                                                type="number"
+                                                                className="w-16 bg-transparent border-b border-transparent focus:border-orange-500/50 text-xs font-bold text-slate-600 dark:text-gray-300 focus:outline-none text-right transition-all"
+                                                                value={room.area}
+                                                                onChange={(e) => updateRoom(room.id, { area: Number(e.target.value) })}
+                                                                onFocus={onInteractionStart}
+                                                            />
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-1.5">
+                                                        <div className="relative">
+                                                            <select
+                                                                className={`w-full appearance-none pl-2 pr-6 py-1 rounded-md text-[9px] font-black uppercase tracking-wider focus:outline-none cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-white/20 focus:border-orange-500 transition-all bg-transparent text-slate-500`}
+                                                                value={room.zone}
+                                                                onChange={(e) => updateRoom(room.id, { zone: e.target.value })}
+                                                                onFocus={onInteractionStart}
+                                                            >
+                                                                {Object.keys(zoneColors).map(z => <option key={z} value={z}>{z}</option>)}
+                                                            </select>
+                                                            <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-1.5 text-center">
+                                                        <button onClick={() => deleteRoom(room.id)} className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover/row:opacity-100">
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
                                     ))}
                                 </tbody>
                             </table>

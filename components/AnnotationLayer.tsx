@@ -15,10 +15,11 @@ interface AnnotationLayerProps {
     onDeleteAnnotation?: (id: string) => void;
     selectedAnnotationId?: string | null;
     onSelectAnnotation?: (id: string | null) => void;
+    onInteractionStart?: () => void;
 }
 
 export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
-    annotations, isSketchMode, activeType, properties, currentFloor, scale, offset, onAddAnnotation, onDeleteAnnotation, onUpdateAnnotation, selectedAnnotationId, onSelectAnnotation
+    annotations, isSketchMode, activeType, properties, currentFloor, scale, offset, onAddAnnotation, onDeleteAnnotation, onUpdateAnnotation, selectedAnnotationId, onSelectAnnotation, onInteractionStart
 }) => {
     const [points, setPoints] = useState<Point[]>([]);
     const [handles, setHandles] = useState<Point[]>([]);
@@ -465,6 +466,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                     style: { ...properties, text: textInputValue }
                 });
             } else {
+                onInteractionStart?.();
                 onUpdateAnnotation?.(currentEditingId, { 
                     style: { ...properties, text: textInputValue } 
                 });
@@ -493,6 +495,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         if (newPoints.length === 0) {
             onDeleteAnnotation?.(annId);
         } else {
+            onInteractionStart?.();
             onUpdateAnnotation?.(annId, { points: newPoints });
         }
         setActiveNodeIdx(null);
@@ -590,6 +593,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                             style: { pointerEvents: 'all' as const, cursor: 'move' },
                             onMouseDown: (e: React.MouseEvent) => {
                                 e.stopPropagation(); // Prevent canvas deselect
+                                onInteractionStart?.();
                                 isDraggingAnnotation.current = true;
                                 dragStartPos.current = toWorld(e.clientX, e.clientY);
                                 onSelectAnnotation?.(ann.id);
@@ -719,6 +723,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                                         className="cursor-move"
                                                         onMouseDown={(e) => {
                                                             e.stopPropagation();
+                                                            onInteractionStart?.();
                                                             isDrawing.current = true;
                                                             setActiveNodeIdx(i);
                                                             setDragHandleType('anchor');
@@ -736,6 +741,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                                         fill="#3b82f6" className="cursor-move"
                                                         onMouseDown={(e) => {
                                                             e.stopPropagation();
+                                                            onInteractionStart?.();
                                                             isDrawing.current = true;
                                                             setActiveNodeIdx(i);
                                                             setDragHandleType('in');
@@ -746,6 +752,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                                         fill="#3b82f6" className="cursor-move"
                                                         onMouseDown={(e) => {
                                                             e.stopPropagation();
+                                                            onInteractionStart?.();
                                                             isDrawing.current = true;
                                                             setActiveNodeIdx(i);
                                                             setDragHandleType('out');
@@ -766,6 +773,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                             className="cursor-move"
                                             onMouseDown={(e) => {
                                                 e.stopPropagation();
+                                                onInteractionStart?.();
                                                 isDrawing.current = true;
                                                 setActiveNodeIdx(i);
                                                 setDragHandleType('anchor'); // Reuse 'anchor' for generic point

@@ -264,31 +264,6 @@ export default function App() {
         setFuture(newFuture);
     }, [future, rooms, connections, floors, zoneColors, projectName, annotations]);
 
-    // Keyboard Shortcuts
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-                if (e.shiftKey) redo();
-                else undo();
-                e.preventDefault();
-            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-                redo();
-                e.preventDefault();
-            } else if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-                // Do not hijack tab if user is in an input field.
-                const activeEl = document.activeElement;
-                const inInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
-
-                if (!inInput) {
-                    e.preventDefault();
-                    setViewMode(prev => prev === 'EDITOR' ? 'CANVAS' : 'EDITOR');
-                }
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [undo, redo]);
-
     const handleResetProject = () => {
         if (window.confirm("Are you sure you want to reset the project? This will clear all data and cannot be undone.")) {
             localStorage.removeItem('SOAP_PROJECT_AUTOSAVE');
@@ -378,20 +353,10 @@ export default function App() {
     const mainRef = useRef<HTMLElement>(null);
     const isPanning = useRef(false);
     const inventoryRef = useRef<HTMLElement>(null);
+    const prevMainRect = useRef<{ width: number, height: number } | null>(null);
     const lastMousePos = useRef<Point>({ x: 0, y: 0 });
 
     // Update offset on resize to keep center
-    useEffect(() => {
-        const handleResize = () => {
-            setViewport(prev => ({
-                ...prev,
-                offset: { x: window.innerWidth / 2, y: window.innerHeight / 2 }
-            }));
-        };
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
     // Physics Loop
     useEffect(() => {
         if (!isMagnetMode) return;
@@ -488,11 +453,24 @@ export default function App() {
     };
 
     const handleZoomToFit = useCallback(() => {
+        const getCenter = () => {
+            if (mainRef.current) {
+                const { width, height } = mainRef.current.getBoundingClientRect();
+                return { x: width / 2, y: height / 2 };
+            }
+            return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        };
+
         const currentFloorRooms = rooms.filter(r => r.isPlaced && r.floor === currentFloor);
-        if (currentFloorRooms.length === 0) {
+        const currentFloorAnnotations = annotations.filter(a => 
+            a.floor === currentFloor && 
+            a.points && a.points.length > 0 // Ensure annotation has points
+        );
+
+        if (currentFloorRooms.length === 0 && currentFloorAnnotations.length === 0) {
             setViewport({
                 scale: 1,
-                offset: { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+                offset: getCenter()
             });
             return;
         }
@@ -506,13 +484,29 @@ export default function App() {
                     maxX = Math.max(maxX, r.x + p.x);
                     maxY = Math.max(maxY, r.y + p.y);
                 });
-            } else {
+            } else if (!r.polygon) {
                 minX = Math.min(minX, r.x);
                 minY = Math.min(minY, r.y);
                 maxX = Math.max(maxX, r.x + r.width);
                 maxY = Math.max(maxY, r.y + r.height);
             }
         });
+
+        currentFloorAnnotations.forEach(a => {
+            if (!a.points) return;
+            a.points.forEach(p => {
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
+            });
+        });
+
+        // If bounds are still infinite (e.g. empty points arrays), reset view
+        if (minX === Infinity || minY === Infinity || maxX === -Infinity || maxY === -Infinity) {
+             setViewport({ scale: 1, offset: getCenter() });
+             return;
+        }
 
         const padding = 100;
         const contentWidth = maxX - minX + padding * 2;
@@ -530,7 +524,63 @@ export default function App() {
                 offset: { x: newOffsetX, y: newOffsetY }
             });
         }
-    }, [rooms, currentFloor]);
+    }, [rooms, annotations, currentFloor]);
+
+    // Resize Observer for Canvas
+    useEffect(() => {
+        if (!mainRef.current) return;
+        
+        // Initialize prevRect
+        const { width, height } = mainRef.current.getBoundingClientRect();
+        prevMainRect.current = { width, height };
+        
+        const resizeObserver = new ResizeObserver(() => {
+            if (!mainRef.current || !prevMainRect.current) return;
+            const { width: newW, height: newH } = mainRef.current.getBoundingClientRect();
+            const { width: oldW, height: oldH } = prevMainRect.current;
+
+            // Adjust offset to keep the center of the view stable
+            setViewport(prev => ({
+                ...prev,
+                offset: {
+                    x: prev.offset.x + (newW - oldW) / 2,
+                    y: prev.offset.y + (newH - oldH) / 2
+                }
+            }));
+
+            prevMainRect.current = { width: newW, height: newH };
+        });
+        resizeObserver.observe(mainRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                if (e.shiftKey) redo();
+                else undo();
+                e.preventDefault();
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+                redo();
+                e.preventDefault();
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+                e.preventDefault();
+                handleZoomToFit();
+            } else if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                // Do not hijack tab if user is in an input field.
+                const activeEl = document.activeElement;
+                const inInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+
+                if (!inInput) {
+                    e.preventDefault();
+                    setViewMode(prev => prev === 'EDITOR' ? 'CANVAS' : 'EDITOR');
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [undo, redo, handleZoomToFit]);
 
     // Auto-zoom when switching to Canvas
     useEffect(() => {
@@ -1410,6 +1460,7 @@ export default function App() {
                                     }}
                                     onUpdateAnnotation={updateAnnotation}
                                     onDeleteAnnotation={deleteAnnotation}
+                                    onInteractionStart={addToHistory}
                                 />
                             </div>
 
@@ -1471,7 +1522,7 @@ export default function App() {
                                 </div>
                             </div>
 
-                            <div className="absolute top-6 right-6 flex flex-col gap-2">
+                            <div className="absolute top-6 right-6 flex flex-col gap-2 z-[200]">
                                 <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm px-2 py-2 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-2">
                                     <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase pl-2">Zoom</span>
                                     <span className="text-xs font-sans font-bold text-slate-700 dark:text-gray-300 w-10 text-center">{(scale * 100).toFixed(0)}%</span>

@@ -10,11 +10,14 @@ import { applyMagneticPhysics } from './utils/physics'; // Newly added
 import { handleExport, getHexColorForZone, getHexBorderForZone } from './utils/exportSystem';
 import { arrangeRooms } from './utils/layout';
 import {
-    Plus, Layers, Map as MapIcon, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
+    Plus, Map as MapIcon, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
     TableProperties, Hexagon, Circle, Square,
-    LandPlot, ChevronRight, ChevronLeft, Eraser, Key, X, Settings, LayoutTemplate, Trash2, Lock, Unlock,
-    Link, Magnet, Grid, Ruler, Moon, Sun, Maximize, ChevronUp, ChevronDown, Activity
+    LandPlot, ChevronRight, ChevronLeft, Key, X, Settings, LayoutTemplate, Trash2, Lock, Unlock, BrushCleaning,
+    Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom
 } from 'lucide-react';
+import { Annotation, AnnotationType, ArrowCapType } from './types';
+import { SketchToolbar } from './components/SketchToolbar';
+import { AnnotationLayer } from './components/AnnotationLayer';
 
 // Shim process for libs that might expect it in Vite
 if (typeof window !== 'undefined' && !window.process) {
@@ -52,8 +55,8 @@ const calculateCurvedArea = (points: Point[]): number => {
         for (let j = 1; j <= steps; j++) {
             const t = j / steps;
             const it = 1 - t;
-            const x = it*it*it*p1.x + 3*it*it*t*cp1x + 3*it*t*t*cp2x + t*t*t*p2.x;
-            const y = it*it*it*p1.y + 3*it*it*t*cp1y + 3*it*t*t*cp2y + t*t*t*p2.y;
+            const x = it * it * it * p1.x + 3 * it * it * t * cp1x + 3 * it * t * t * cp2x + t * t * t * p2.x;
+            const y = it * it * it * p1.y + 3 * it * it * t * cp1y + 3 * it * t * t * cp2y + t * t * t * p2.y;
             area += prevX * y - x * prevY;
             prevX = x;
             prevY = y;
@@ -99,6 +102,28 @@ export default function App() {
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+    // Sketch State
+    const [annotations, setAnnotations] = useState<Annotation[]>(initialData?.annotations || []);
+    const [isSketchMode, setIsSketchMode] = useState(false);
+    const [activeSketchType, setActiveSketchType] = useState<AnnotationType | 'eraser' | 'select'>('select');
+    const [sketchProperties, setSketchProperties] = useState({
+        stroke: '#f97316',
+        strokeWidth: 2,
+        strokeDash: '',
+        startCap: 'none' as ArrowCapType,
+        endCap: 'none' as ArrowCapType,
+        fillet: 0,
+        fontSize: 16,
+        fontFamily: 'sans-serif',
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        textDecoration: 'none'
+    });
+    const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+
+    const selectedAnnotation = useMemo(() => annotations.find(a => a.id === selectedAnnotationId), [annotations, selectedAnnotationId]);
+
 
     const [appSettings, setAppSettings] = useState<AppSettings>(initialData?.appSettings || {
         zoneTransparency: 0.5,
@@ -174,10 +199,11 @@ export default function App() {
             zoneColors,
             appSettings,
             floors,
-            currentFloor
+            currentFloor,
+            annotations
         };
         localStorage.setItem('SOAP_PROJECT_AUTOSAVE', JSON.stringify(saveData));
-    }, [projectName, rooms, connections, zoneColors, appSettings, floors, currentFloor]);
+    }, [projectName, rooms, connections, zoneColors, appSettings, floors, currentFloor, annotations]);
 
     // --- History System ---
     const [history, setHistory] = useState<{
@@ -186,6 +212,7 @@ export default function App() {
         floors: typeof floors;
         zoneColors: Record<string, ZoneColor>;
         projectName: string;
+        annotations: Annotation[];
     }[]>([]);
     const [future, setFuture] = useState<{
         rooms: Room[];
@@ -193,46 +220,49 @@ export default function App() {
         floors: typeof floors;
         zoneColors: Record<string, ZoneColor>;
         projectName: string;
+        annotations: Annotation[];
     }[]>([]);
 
     const addToHistory = useCallback(() => {
         setHistory(prev => {
-            const newHistory = [...prev, { rooms, connections, floors, zoneColors, projectName }];
+            const newHistory = [...prev, { rooms, connections, floors, zoneColors, projectName, annotations }];
             if (newHistory.length > 50) newHistory.shift();
             return newHistory;
         });
         setFuture([]);
-    }, [rooms, connections, floors, zoneColors, projectName]);
+    }, [rooms, connections, floors, zoneColors, projectName, annotations]);
 
     const undo = useCallback(() => {
         if (history.length === 0) return;
         const previous = history[history.length - 1];
         const newHistory = history.slice(0, -1);
 
-        setFuture(prev => [{ rooms, connections, floors, zoneColors, projectName }, ...prev]);
+        setFuture(prev => [{ rooms, connections, floors, zoneColors, projectName, annotations }, ...prev]);
 
         setRooms(previous.rooms);
         setConnections(previous.connections);
         setFloors(previous.floors);
         setZoneColors(previous.zoneColors);
         setProjectName(previous.projectName);
+        setAnnotations(previous.annotations || []);
         setHistory(newHistory);
-    }, [history, rooms, connections, floors, zoneColors, projectName]);
+    }, [history, rooms, connections, floors, zoneColors, projectName, annotations]);
 
     const redo = useCallback(() => {
         if (future.length === 0) return;
         const next = future[0];
         const newFuture = future.slice(1);
 
-        setHistory(prev => [...prev, { rooms, connections, floors, zoneColors, projectName }]);
+        setHistory(prev => [...prev, { rooms, connections, floors, zoneColors, projectName, annotations }]);
 
         setRooms(next.rooms);
         setConnections(next.connections);
         setFloors(next.floors);
         setZoneColors(next.zoneColors);
         setProjectName(next.projectName);
+        setAnnotations(next.annotations || []);
         setFuture(newFuture);
-    }, [future, rooms, connections, floors, zoneColors, projectName]);
+    }, [future, rooms, connections, floors, zoneColors, projectName, annotations]);
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -647,7 +677,7 @@ export default function App() {
         reader.onload = (event) => {
             try {
                 const content = event.target?.result as string;
-                
+
                 // Handle CSV Import
                 if (file.name.toLowerCase().endsWith('.csv')) {
                     const lines = content.split('\n');
@@ -664,7 +694,7 @@ export default function App() {
                             const name = parts[0].trim();
                             const area = parseFloat(parts[1].trim());
                             const zone = parts[2]?.trim() || 'Default';
-                            
+
                             if (name && !isNaN(area)) {
                                 const side = Math.sqrt(area) * PIXELS_PER_METER;
                                 newRooms.push({
@@ -692,7 +722,7 @@ export default function App() {
                 }
 
                 const data = JSON.parse(content);
-                
+
                 if (data.rooms && Array.isArray(data.rooms)) {
                     addToHistory();
                     if (data.projectName) setProjectName(data.projectName);
@@ -702,7 +732,7 @@ export default function App() {
                     if (data.currentFloor !== undefined) setCurrentFloor(data.currentFloor);
                     if (data.zoneColors) setZoneColors(data.zoneColors);
                     if (data.appSettings) setAppSettings(data.appSettings);
-                    
+
                     setHasInitialZoomed(false);
                     setViewMode('CANVAS');
                 } else {
@@ -714,7 +744,7 @@ export default function App() {
             }
         };
         reader.readAsText(file);
-        e.target.value = ''; 
+        e.target.value = '';
     };
 
     // --- Room Handlers ---
@@ -745,10 +775,10 @@ export default function App() {
         setRooms(prev => {
             const leader = prev.find(r => r.id === id);
             if (!leader) return prev;
-            
+
             const dx = x - leader.x;
             const dy = y - leader.y;
-            
+
             if (dx === 0 && dy === 0) return prev;
 
             if (selectedRoomIds.has(id) && selectedRoomIds.size > 1) {
@@ -792,6 +822,39 @@ export default function App() {
         };
         setRooms(prev => [...prev, newRoom]);
     }, []);
+
+    const updateAnnotation = useCallback((id: string, updates: Partial<Annotation>) => {
+        setAnnotations(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+    }, []);
+
+    const handleAnnotationPropertyChange = (key: string, value: any) => {
+        if (selectedAnnotationId) {
+            addToHistory();
+            updateAnnotation(selectedAnnotationId, { style: { ...selectedAnnotation!.style, [key]: value } });
+        } else {
+            setSketchProperties(prev => ({ ...prev, [key]: value }));
+        }
+    };
+
+    const handleZIndex = (action: 'front' | 'back') => {
+        if (!selectedAnnotationId) return;
+        addToHistory();
+        setAnnotations(prev => {
+            const index = prev.findIndex(a => a.id === selectedAnnotationId);
+            if (index === -1) return prev;
+            const item = prev[index];
+            const newArr = [...prev];
+            newArr.splice(index, 1);
+            if (action === 'front') newArr.push(item);
+            else newArr.unshift(item);
+            return newArr;
+        });
+    };
+
+    const deleteAnnotation = useCallback((id: string) => {
+        addToHistory();
+        setAnnotations(prev => prev.filter(a => a.id !== id));
+    }, [addToHistory]);
 
     const handleSaveApiKey = (key: string) => {
         setApiKey(key);
@@ -871,8 +934,8 @@ export default function App() {
     const handleZoneDragEnd = useCallback((e: MouseEvent) => {
         setIsZoneDragging(false);
         if (selectedZone && inventoryRef.current) {
-             const rect = inventoryRef.current.getBoundingClientRect();
-             if (
+            const rect = inventoryRef.current.getBoundingClientRect();
+            if (
                 e.clientX >= rect.left &&
                 e.clientX <= rect.right &&
                 e.clientY >= rect.top &&
@@ -894,7 +957,7 @@ export default function App() {
     // --- Render Helpers ---
     const selectedRoom = rooms.find(r => selectedRoomIds.has(r.id));
     const selectedRoomsList = rooms.filter(r => selectedRoomIds.has(r.id));
-    
+
     // Multi-selection stats
     const isMultiSelection = selectedRoomIds.size > 1;
     const multiSelectionStats = useMemo(() => {
@@ -905,8 +968,8 @@ export default function App() {
             acc[type] = (acc[type] || 0) + 1;
             return acc;
         }, {} as Record<string, number>);
-        const breakdown = Object.entries(types).map(([t, c]) => `${c} ${t}${c > 1 ? 's' : ''}`).join(', ');
-        
+        const breakdown = Object.entries(types).map(([t, c]) => `${c} ${t}${(c as number) > 1 ? 's' : ''}`).join(', ');
+
         // Determine common shape state
         const firstShape = selectedRoomsList[0].shape || 'rect';
         const isMixed = selectedRoomsList.some(r => (r.shape || 'rect') !== (firstShape || 'rect'));
@@ -925,7 +988,7 @@ export default function App() {
             // Only carry over styles that are actually defined (custom overrides).
             // If they are undefined, we let the new shape inherit from the Zone/AppSettings defaults naturally.
             const newStyle: any = { ...roomStyle };
-            
+
             // Preserve specific overrides if they exist, otherwise leave undefined to use defaults
             if (roomStyle.fill) newStyle.fill = roomStyle.fill;
             if (roomStyle.stroke) newStyle.stroke = roomStyle.stroke;
@@ -990,10 +1053,10 @@ export default function App() {
                 }
             `}</style>
             {/* Premium Header */}
-            <header className="h-12 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] transition-colors duration-300 relative">
+            <header className="h-12 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] relative transition-colors duration-300">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 group cursor-pointer">
-                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-orange-200/50 group-hover:scale-105 transition-transform duration-300">
+                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-orange-200/50 group-hover:scale-105">
                             <MapIcon size={16} />
                         </div>
                         <div>
@@ -1005,19 +1068,19 @@ export default function App() {
                     <div className="flex items-center gap-1">
                         <button
                             onClick={() => setDarkMode(!darkMode)}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${!darkMode ? 'text-slate-400 hover:text-orange-500 hover:bg-orange-50' : 'text-slate-400 hover:text-orange-400 hover:bg-white/5'}`}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center ${!darkMode ? 'text-slate-400 hover:text-orange-500 hover:bg-orange-50' : 'text-slate-400 hover:text-orange-400 hover:bg-white/5'}`}
                             title="Toggle Dark Mode"
                         >
                             {darkMode ? <Moon size={14} /> : <Sun size={14} />}
                         </button>
                         <button
                             onClick={() => setShowApiKeyModal(true)}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${apiKey ? 'text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/5' : 'text-orange-500 bg-orange-50 dark:bg-orange-900/20 animate-pulse border border-orange-200 dark:border-orange-800/50 shadow-lg shadow-orange-100'}`}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center ${apiKey ? 'text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/5' : 'text-orange-500 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 shadow-lg shadow-orange-100'}`}
                             title="Gemini API Key Settings"
                         >
                             <Key size={14} />
                         </button>
-                        <button onClick={() => setShowSettingsModal(true)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-white/5 transition-all" title="Settings">
+                        <button onClick={() => setShowSettingsModal(true)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-white/5" title="Settings">
                             <Settings size={14} />
                         </button>
                     </div>
@@ -1025,14 +1088,14 @@ export default function App() {
                     <div className="h-6 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
 
                     <div className="flex items-center gap-1">
-                        <button onClick={undo} disabled={history.length === 0} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-30 transition-all" title="Undo (Ctrl+Z)">
+                        <button onClick={undo} disabled={history.length === 0} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-30" title="Undo (Ctrl+Z)">
                             <Undo2 size={14} />
                         </button>
-                        <button onClick={redo} disabled={future.length === 0} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-30 transition-all" title="Redo (Ctrl+Y)">
+                        <button onClick={redo} disabled={future.length === 0} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-30" title="Redo (Ctrl+Y)">
                             <Redo2 size={14} />
                         </button>
                         <div className="w-px h-3 bg-slate-200 dark:bg-dark-border mx-1" />
-                        <button onClick={handleResetProject} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" title="Reset Project">
+                        <button onClick={handleResetProject} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Reset Project">
                             <RotateCcw size={14} />
                         </button>
                     </div>
@@ -1043,13 +1106,13 @@ export default function App() {
                     <div className="flex bg-slate-100/50 dark:bg-white/5 p-1 rounded-xl border border-slate-200/50 dark:border-dark-border shadow-sm">
                         <button
                             onClick={() => setViewMode('EDITOR')}
-                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'EDITOR' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${viewMode === 'EDITOR' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
                         >
                             <TableProperties size={14} /> Program
                         </button>
                         <button
                             onClick={() => setViewMode('CANVAS')}
-                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'CANVAS' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${viewMode === 'CANVAS' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
                         >
                             <LandPlot size={14} /> Canvas
                         </button>
@@ -1070,13 +1133,13 @@ export default function App() {
 
                     <div className="flex items-center gap-1.5">
                         <button
-                            onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 group"
+                            onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 group"
                         >
-                            <Upload size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Export
+                            <Upload size={14} className="group-hover:-translate-y-0.5" /> Export
                         </button>
 
-                        <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 cursor-pointer group">
-                            <Download size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Import
+                        <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 cursor-pointer group">
+                            <Download size={14} className="group-hover:-translate-y-0.5" /> Import
                             <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
                         </label>
                     </div>
@@ -1099,7 +1162,7 @@ export default function App() {
                     />
                 ) : (
                     <>
-                        <aside 
+                        <aside
                             ref={inventoryRef}
                             className={`${isInventoryOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-r border-slate-200/50 dark:border-dark-border flex flex-col z-30 shadow-[10px_0_30px_rgba(0,0,0,0.02)] transition-all duration-300 ${isInventoryHovered ? 'ring-2 ring-orange-400 ring-inset bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
                             onDragOver={handleInventoryDragOver}
@@ -1125,7 +1188,7 @@ export default function App() {
                                                 key={room.id}
                                                 draggable
                                                 onDragStart={(e) => handleDragStart(e, room)}
-                                                className="p-5 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm hover:shadow-xl hover:border-primary/20 hover:-translate-y-1 transition-all duration-300 cursor-grab active:cursor-grabbing group bg-white dark:bg-dark-surface"
+                                                className="p-5 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm hover:shadow-xl hover:border-primary/20 hover:-translate-y-1 cursor-grab active:cursor-grabbing group bg-white dark:bg-dark-surface"
                                                 onClick={() => {
                                                     /* Optional: keep click to place at center if drag fails or as alternative */
                                                     /* placeRoom(room); */
@@ -1133,12 +1196,12 @@ export default function App() {
                                             >
                                                 <div className="flex justify-between items-start mb-3">
                                                     <div>
-                                                        <span className="font-black text-slate-800 dark:text-gray-200 text-sm tracking-tight block group-hover:text-orange-600 transition-colors">{room.name}</span>
+                                                        <span className="font-black text-slate-800 dark:text-gray-200 text-sm tracking-tight block group-hover:text-orange-600">{room.name}</span>
                                                         <span className="text-[10px] text-slate-400 dark:text-gray-500 font-medium">Drag to canvas to place</span>
                                                     </div>
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); handlePlaceCenter(room); }}
-                                                        className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-white/5 flex items-center justify-center text-slate-300 dark:text-gray-500 group-hover:bg-orange-500/10 group-hover:text-orange-600 transition-all hover:scale-110 active:scale-95"
+                                                        className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-white/5 flex items-center justify-center text-slate-300 dark:text-gray-500 group-hover:bg-orange-500/10 group-hover:text-orange-600 hover:scale-110 active:scale-95"
                                                     >
                                                         <Plus size={16} />
                                                     </button>
@@ -1158,13 +1221,13 @@ export default function App() {
                                         )}
                                     </div>
                                     <div className="p-6 bg-slate-50/50 dark:bg-white/5 border-t border-slate-100 dark:border-dark-border">
-                                        <button onClick={() => addRoom({})} className="w-full py-4 bg-white dark:bg-dark-surface border border-slate-200/80 dark:border-dark-border rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-gray-300 hover:border-orange-500 hover:text-orange-600 hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-3 shadow-sm group">
-                                            <Plus size={18} className="group-hover:rotate-90 transition-transform" /> Add Manual Space
+                                        <button onClick={() => addRoom({})} className="w-full py-4 bg-white dark:bg-dark-surface border border-slate-200/80 dark:border-dark-border rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-gray-300 hover:border-orange-500 hover:text-orange-600 hover:shadow-lg flex items-center justify-center gap-3 shadow-sm group">
+                                            <Plus size={18} className="group-hover:rotate-90" /> Add Manual Space
                                         </button>
                                     </div>
                                 </>
                             ) : (
-                                <div className="h-full flex flex-col items-center py-6 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 transition-colors" onClick={() => setIsInventoryOpen(true)}>
+                                <div className="h-full flex flex-col items-center py-6 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => setIsInventoryOpen(true)}>
                                     <div className="flex-1 flex items-center justify-center">
                                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-gray-500 whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Inventory</span>
                                     </div>
@@ -1176,13 +1239,13 @@ export default function App() {
                         <main
                             ref={mainRef}
                             className={`flex-1 relative overflow-hidden bg-[#f0f2f5] dark:bg-dark-bg transition-colors duration-500 ${isZoneDragging ? 'no-transition' : ''}`}
-                            onMouseDown={handlePanStart}
-                            onMouseMove={handleMouseMove}
-                            onMouseUp={handleMouseUp}
+                            onMouseDown={isSketchMode ? undefined : handlePanStart}
+                            onMouseMove={isSketchMode ? undefined : handleMouseMove}
+                            onMouseUp={isSketchMode ? undefined : handleMouseUp}
                             onDragOver={handleDragOver}
                             onDrop={handleDrop}
                             style={{
-                                cursor: isPanning.current ? 'grabbing' : 'grab',
+                                cursor: isSketchMode ? 'crosshair' : (isPanning.current ? 'grabbing' : 'grab'),
                                 ...(showGrid ? {
                                     backgroundImage: `
                                         linear-gradient(to right, ${darkMode ? '#333' : '#e2e8f0'} 1px, transparent 1px),
@@ -1196,7 +1259,7 @@ export default function App() {
                             {/* The onMouseDown handler above already handles this */}
                             {/* Zone Overlay Layer - Behind everything */}
                             <div
-                                className="absolute inset-0 transition-transform duration-75 origin-top-left pointer-events-none"
+                                className="absolute inset-0 origin-top-left pointer-events-none"
                                 style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
                             >
                                 <ZoneOverlay
@@ -1212,9 +1275,14 @@ export default function App() {
                                 />
                             </div>
 
+                            {/* Yellow Filter for Sketch Mode */}
+                            {isSketchMode && (
+                                <div className="absolute inset-0 bg-yellow-400/5 dark:bg-yellow-500/10 pointer-events-none z-30" />
+                            )}
+
                             {/* Connection Lines Layer - Explicitly behind bubbles */}
                             <div
-                                className="absolute inset-0 transition-transform duration-75 origin-top-left pointer-events-none"
+                                className="absolute inset-0 origin-top-left pointer-events-none"
                                 style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
                             >
                                 <svg className="absolute inset-0 overflow-visible pointer-events-none">
@@ -1271,57 +1339,82 @@ export default function App() {
 
                             {/* Bubbles Layer */}
                             <div
-                                className="absolute inset-0 transition-transform duration-75 origin-top-left pointer-events-none"
+                                className="absolute inset-0 origin-top-left pointer-events-none"
                                 style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
                             >
                                 {(() => {
                                     const visibleRooms = rooms.filter(r => r.isPlaced && r.floor === currentFloor);
                                     return visibleRooms.map(room => (
-                                    <Bubble
-                                        key={room.id}
-                                        room={room}
-                                        zoomScale={scale}
-                                        updateRoom={updateRoom}
-                                        onMove={(x, y) => handleMoveRoom(room.id, x, y)}
-                                        isSelected={selectedRoomIds.has(room.id)}
-                                        isLinkingSource={connectionSourceId === room.id}
-                                        onLinkToggle={toggleLink}
-                                        getSnappedPosition={getSnappedPosition}
-                                        onSelect={(id, multi) => {
-                                            if (connectionSourceId) {
-                                                toggleLink(id);
-                                                return;
-                                            }
-                                            // Auto-lock text of other rooms when selecting a new one
-                                            if (!multi) {
-                                                setRooms(prev => prev.map(r => (r.id !== id && r.isTextUnlocked) ? { ...r, isTextUnlocked: false } : r));
-                                            }
-                                            setSelectedRoomIds(prev => {
-                                                const next = new Set(multi ? prev : []);
-                                                if (next.has(id)) next.delete(id);
-                                                else next.add(id);
-                                                return next;
-                                            });
-                                            if (!multi) setSelectedZone(null); // Clear zone selection on room click unless multi?
-                                        }}
-                                        diagramStyle={currentStyle}
-                                        snapEnabled={snapEnabled}
-                                        snapPixelUnit={appSettings.snapToGrid ? gridSize * PIXELS_PER_METER : 1}
-                                        pixelsPerMeter={PIXELS_PER_METER}
-                                        floors={floors}
-                                        appSettings={appSettings}
-                                        zoneColors={zoneColors}
-                                        onDragEnd={handleBubbleDragEnd}
-                                        onDragStart={() => { setIsBubbleDragging(true); addToHistory(); }}
-                                        isAnyDragging={isBubbleDragging}
-                                        otherRooms={selectedRoomIds.has(room.id) ? visibleRooms.filter(r => r.id !== room.id) : undefined}
-                                    />
+                                        <Bubble
+                                            key={room.id}
+                                            room={room}
+                                            zoomScale={scale}
+                                            updateRoom={updateRoom}
+                                            onMove={(x, y) => handleMoveRoom(room.id, x, y)}
+                                            isSelected={selectedRoomIds.has(room.id)}
+                                            isLinkingSource={connectionSourceId === room.id}
+                                            onLinkToggle={toggleLink}
+                                            getSnappedPosition={getSnappedPosition}
+                                            onSelect={(id, multi) => {
+                                                if (connectionSourceId) {
+                                                    toggleLink(id);
+                                                    return;
+                                                }
+                                                // Auto-lock text of other rooms when selecting a new one
+                                                if (!multi) {
+                                                    setRooms(prev => prev.map(r => (r.id !== id && r.isTextUnlocked) ? { ...r, isTextUnlocked: false } : r));
+                                                }
+                                                setSelectedRoomIds(prev => {
+                                                    const next = new Set(multi ? prev : []);
+                                                    if (next.has(id)) next.delete(id);
+                                                    else next.add(id);
+                                                    return next;
+                                                });
+                                                if (!multi) setSelectedZone(null); // Clear zone selection on room click unless multi?
+                                            }}
+                                            diagramStyle={currentStyle}
+                                            snapEnabled={snapEnabled}
+                                            snapPixelUnit={appSettings.snapToGrid ? gridSize * PIXELS_PER_METER : 1}
+                                            pixelsPerMeter={PIXELS_PER_METER}
+                                            floors={floors}
+                                            appSettings={appSettings}
+                                            zoneColors={zoneColors}
+                                            onDragEnd={handleBubbleDragEnd}
+                                            onDragStart={() => { setIsBubbleDragging(true); addToHistory(); }}
+                                            isAnyDragging={isBubbleDragging}
+                                            otherRooms={selectedRoomIds.has(room.id) ? visibleRooms.filter(r => r.id !== room.id) : undefined}
+                                            isSketchMode={isSketchMode}
+                                        />
                                     ));
                                 })()}
                             </div>
 
+                            {/* Annotation Layer - Above all spaces and zones */}
+                            <div
+                                className={`absolute inset-0 ${isSketchMode ? '' : 'pointer-events-none'}`}
+                                style={{ zIndex: 100 }}
+                            >
+                                <AnnotationLayer
+                                    annotations={annotations}
+                                    isSketchMode={isSketchMode}
+                                    activeType={activeSketchType}
+                                    properties={selectedAnnotation ? selectedAnnotation.style : sketchProperties}
+                                    currentFloor={currentFloor}
+                                    scale={scale}
+                                    offset={offset}
+                                    selectedAnnotationId={selectedAnnotationId}
+                                    onSelectAnnotation={setSelectedAnnotationId}
+                                    onAddAnnotation={(ann) => {
+                                        addToHistory();
+                                        setAnnotations(prev => [...prev, ann]);
+                                    }}
+                                    onUpdateAnnotation={updateAnnotation}
+                                    onDeleteAnnotation={deleteAnnotation}
+                                />
+                            </div>
+
                             {/* Tools Bar (Top Left) */}
-                            <div className="absolute top-6 left-6 flex flex-col gap-2 z-50">
+                            <div className="absolute top-6 left-6 flex flex-col gap-2 z-[200]">
                                 <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm p-1.5 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-1">
                                     <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-full px-2 py-1 border border-slate-200/50 dark:border-dark-border gap-2 mr-1">
                                         <span className="text-xs font-bold font-sans w-8 text-center">{gridSize}m</span>
@@ -1353,15 +1446,27 @@ export default function App() {
                                         className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${!isMagnetMode ? 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50 shadow-inner'}`}
                                         title="Physics / Magnetic Zones"
                                     >
-                                        <Activity size={16} className={isMagnetMode ? "animate-pulse" : ""} />
+                                        <Atom size={16} className={isMagnetMode ? "animate-spin" : ""} />
                                     </button>
+
+                                    <SketchToolbar
+                                        isActive={isSketchMode}
+                                        onToggle={() => setIsSketchMode(!isSketchMode)}
+                                        activeType={activeSketchType}
+                                        onTypeChange={setActiveSketchType}
+                                        properties={selectedAnnotation ? selectedAnnotation.style : sketchProperties}
+                                        onPropertyChange={handleAnnotationPropertyChange}
+                                        selectedAnnotation={selectedAnnotation}
+                                        onZIndex={handleZIndex}
+                                        onDelete={() => selectedAnnotationId && deleteAnnotation(selectedAnnotationId)}
+                                    />
 
                                     <button
                                         onClick={handleClearCanvas}
                                         className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 text-slate-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500"
                                         title="Clear Canvas"
                                     >
-                                        <Eraser size={16} />
+                                        <BrushCleaning size={16} />
                                     </button>
                                 </div>
                             </div>
@@ -1370,7 +1475,7 @@ export default function App() {
                                 <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm px-2 py-2 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-2">
                                     <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase pl-2">Zoom</span>
                                     <span className="text-xs font-sans font-bold text-slate-700 dark:text-gray-300 w-10 text-center">{(scale * 100).toFixed(0)}%</span>
-                                    <button onClick={handleZoomToFit} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-600 dark:text-gray-300 hover:bg-orange-600 hover:text-white transition-colors" title="Zoom to Fit">
+                                    <button onClick={handleZoomToFit} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-600 dark:text-gray-300 hover:bg-orange-600 hover:text-white" title="Zoom to Fit">
                                         <Maximize size={12} />
                                     </button>
                                 </div>
@@ -1393,7 +1498,7 @@ export default function App() {
                                         onClick={() => setCurrentFloor(f.id)}
                                         onDoubleClick={() => setEditingFloorId(f.id)}
                                         className={`group
-                                            relative px-4 py-1.5 text-[9px] font-black uppercase tracking-widest cursor-pointer transition-all rounded-b-lg flex items-center gap-2 select-none border-b border-x border-transparent
+                                            relative px-4 py-1.5 text-[9px] font-black uppercase tracking-widest cursor-pointer rounded-b-lg flex items-center gap-2 select-none border-b border-x border-transparent
                                             ${currentFloor === f.id
                                                 ? 'bg-[#f0f2f5] dark:bg-dark-bg text-orange-600 border-slate-200/50 dark:border-dark-border !border-t-transparent h-full -translate-y-px'
                                                 : 'bg-slate-300/50 dark:bg-white/5 text-slate-500 dark:text-gray-500 hover:bg-slate-100/50 dark:hover:bg-white/10 h-[85%] mt-0'
@@ -1419,7 +1524,7 @@ export default function App() {
                                                 {currentFloor === f.id && (
                                                     <button
                                                         onClick={(e) => floors.length > 1 && handleDeleteFloor(e, f.id)}
-                                                        className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition-colors ml-1"
+                                                        className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 ml-1"
                                                         title="Delete Floor"
                                                     >
                                                         <X size={8} />
@@ -1431,7 +1536,7 @@ export default function App() {
                                 ))}
                                 <button
                                     onClick={handleAddFloor}
-                                    className="h-[85%] w-8 flex items-center justify-center rounded-b-lg bg-slate-300/50 dark:bg-white/5 hover:bg-orange-600 hover:text-white text-slate-500 transition-colors"
+                                    className="h-[85%] w-8 flex items-center justify-center rounded-b-lg bg-slate-300/50 dark:bg-white/5 hover:bg-orange-600 hover:text-white text-slate-500"
                                     title="Add Floor"
                                 >
                                     <Plus size={12} />
@@ -1450,14 +1555,14 @@ export default function App() {
                                     </div>
                                     <div className="flex-1 p-6 overflow-y-auto">
                                         {selectedRoom || isMultiSelection ? (
-                                            <div className="space-y-6 slide-in-bottom">
+                                            <div className="space-y-6">
                                                 <div>
                                                     <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Space Name</label>
                                                     {isMultiSelection ? (
                                                         <div className="text-sm font-bold text-slate-500 italic">{selectedRoomIds.size} spaces selected</div>
                                                     ) : (
                                                         <input
-                                                            className="w-full text-xl font-black text-slate-800 dark:text-gray-100 focus:outline-none focus:text-orange-600 transition-colors bg-transparent border-b border-transparent focus:border-orange-500 pb-1"
+                                                            className="w-full text-xl font-black text-slate-800 dark:text-gray-100 focus:outline-none focus:text-orange-600 bg-transparent border-b border-transparent focus:border-orange-500 pb-1"
                                                             value={selectedRoom!.name}
                                                             onChange={(e) => updateRoom(selectedRoom!.id, { name: e.target.value })}
                                                         />
@@ -1468,9 +1573,9 @@ export default function App() {
                                                 <div>
                                                     <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Shape Type</label>
                                                     <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
-                                                        <button onClick={() => handleConvertShape('rect')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && (!selectedRoom?.shape || selectedRoom?.shape === 'rect')) || (isMultiSelection && multiSelectionStats?.commonShape === 'rect') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Rectangle"><Square size={16} /></button>
-                                                        <button onClick={() => handleConvertShape('polygon')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && selectedRoom?.shape === 'polygon') || (isMultiSelection && multiSelectionStats?.commonShape === 'polygon') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Polygon"><Hexagon size={16} /></button>
-                                                        <button onClick={() => handleConvertShape('bubble')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && selectedRoom?.shape === 'bubble') || (isMultiSelection && multiSelectionStats?.commonShape === 'bubble') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Bubble"><Circle size={16} /></button>
+                                                        <button onClick={() => handleConvertShape('rect')} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${(!isMultiSelection && (!selectedRoom?.shape || selectedRoom?.shape === 'rect')) || (isMultiSelection && multiSelectionStats?.commonShape === 'rect') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Rectangle"><Square size={16} /></button>
+                                                        <button onClick={() => handleConvertShape('polygon')} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${(!isMultiSelection && selectedRoom?.shape === 'polygon') || (isMultiSelection && multiSelectionStats?.commonShape === 'polygon') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Polygon"><Hexagon size={16} /></button>
+                                                        <button onClick={() => handleConvertShape('bubble')} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${(!isMultiSelection && selectedRoom?.shape === 'bubble') || (isMultiSelection && multiSelectionStats?.commonShape === 'bubble') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Bubble"><Circle size={16} /></button>
                                                     </div>
                                                 </div>
 
@@ -1479,7 +1584,7 @@ export default function App() {
                                                     <div className="flex gap-2">
                                                         <button
                                                             onClick={() => toggleLink(selectedRoom!.id)}
-                                                            className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2 ${connectionSourceId === selectedRoom!.id ? 'bg-yellow-50 border-yellow-300 text-yellow-600 dark:bg-yellow-900/20 dark:border-yellow-700 dark:text-yellow-400' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-dark-border text-slate-500 dark:text-gray-400 hover:border-orange-500 hover:text-orange-600'}`}
+                                                            className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border flex items-center justify-center gap-2 ${connectionSourceId === selectedRoom!.id ? 'bg-yellow-50 border-yellow-300 text-yellow-600 dark:bg-yellow-900/20 dark:border-yellow-700 dark:text-yellow-400' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-dark-border text-slate-500 dark:text-gray-400 hover:border-orange-500 hover:text-orange-600'}`}
                                                         >
                                                             <Link size={14} className={connectionSourceId === selectedRoom!.id ? 'fill-current' : ''} /> {connectionSourceId === selectedRoom!.id ? 'Cancel' : 'Link'}
                                                         </button>
@@ -1488,7 +1593,7 @@ export default function App() {
                                                             <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest px-2">Text</span>
                                                             <button
                                                                 onClick={() => updateRoom(selectedRoom!.id, { isTextUnlocked: !selectedRoom!.isTextUnlocked })}
-                                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${selectedRoom!.isTextUnlocked ? 'bg-white dark:bg-dark-surface text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                                                                className={`w-8 h-8 rounded-lg flex items-center justify-center ${selectedRoom!.isTextUnlocked ? 'bg-white dark:bg-dark-surface text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:text-gray-400 dark:hover:text-gray-200'}`}
                                                                 title={selectedRoom!.isTextUnlocked ? "Lock Text Position" : "Unlock Text to Move"}
                                                             >
                                                                 {selectedRoom!.isTextUnlocked ? <Unlock size={14} /> : <Lock size={14} />}
@@ -1496,7 +1601,7 @@ export default function App() {
                                                             <button
                                                                 onClick={() => updateRoom(selectedRoom!.id, { textPos: undefined })}
                                                                 disabled={!selectedRoom!.textPos}
-                                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${!selectedRoom!.textPos ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-400 hover:text-orange-600 hover:bg-white dark:hover:bg-dark-surface hover:shadow-sm dark:text-gray-400'}`}
+                                                                className={`w-8 h-8 rounded-lg flex items-center justify-center ${!selectedRoom!.textPos ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-400 hover:text-orange-600 hover:bg-white dark:hover:bg-dark-surface hover:shadow-sm dark:text-gray-400'}`}
                                                                 title="Reset Text Position"
                                                             >
                                                                 <RotateCcw size={14} />
@@ -1526,12 +1631,12 @@ export default function App() {
                                                                                             <div className={`w-2 h-2 rounded-full ${zoneColors[otherRoom.zone]?.bg || 'bg-slate-300'}`} />
                                                                                             {otherRoom.name}
                                                                                         </span>
-                                                                                        <button 
+                                                                                        <button
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation();
                                                                                                 setConnections(prev => prev.filter(c => c.id !== conn.id));
                                                                                             }}
-                                                                                            className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                                                                                            className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"
                                                                                             title="Unlink"
                                                                                         >
                                                                                             <X size={12} />
@@ -1550,79 +1655,79 @@ export default function App() {
 
                                                 {!isMultiSelection ? (
                                                     <>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
-                                                        <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Area</span>
-                                                        <div className="flex items-baseline gap-1">
-                                                    <input
-                                                                type="number" 
-                                                                className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200 bg-transparent border-b border-transparent focus:border-orange-500 outline-none w-full" 
-                                                                value={selectedRoom!.area} 
-                                                                onChange={(e) => {
-                                                                const val = parseFloat(e.target.value);
-                                                                    if (!isNaN(val)) updateRoom(selectedRoom!.id, { area: val });
-                                                            }} />
-                                                            <small className="text-xs opacity-60">m²</small>
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
+                                                                <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Area</span>
+                                                                <div className="flex items-baseline gap-1">
+                                                                    <input
+                                                                        type="number"
+                                                                        className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200 bg-transparent border-b border-transparent focus:border-orange-500 outline-none w-full"
+                                                                        value={selectedRoom!.area}
+                                                                        onChange={(e) => {
+                                                                            const val = parseFloat(e.target.value);
+                                                                            if (!isNaN(val)) updateRoom(selectedRoom!.id, { area: val });
+                                                                        }} />
+                                                                    <small className="text-xs opacity-60">m²</small>
+                                                                </div>
+                                                            </div>
+                                                            <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border flex justify-between items-center">
+                                                                <div>
+                                                                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Floor</span>
+                                                                    <span className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200">{floors.find(f => f.id === selectedRoom!.floor)?.label || 'N/A'}</span>
+                                                                </div>
+                                                                <div className="flex flex-col gap-1">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const currentIdx = floors.findIndex(f => f.id === selectedRoom!.floor);
+                                                                            if (currentIdx < floors.length - 1) {
+                                                                                updateRoom(selectedRoom!.id, { floor: floors[currentIdx + 1].id });
+                                                                            }
+                                                                        }}
+                                                                        disabled={floors.findIndex(f => f.id === selectedRoom!.floor) >= floors.length - 1}
+                                                                        className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400 hover:text-orange-600 disabled:opacity-30"
+                                                                        title="Move Up"
+                                                                    >
+                                                                        <ChevronUp size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const currentIdx = floors.findIndex(f => f.id === selectedRoom!.floor);
+                                                                            if (currentIdx > 0) {
+                                                                                updateRoom(selectedRoom!.id, { floor: floors[currentIdx - 1].id });
+                                                                            }
+                                                                        }}
+                                                                        disabled={floors.findIndex(f => f.id === selectedRoom!.floor) <= 0}
+                                                                        className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400 hover:text-orange-600 disabled:opacity-30"
+                                                                        title="Move Down"
+                                                                    >
+                                                                        <ChevronDown size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border flex justify-between items-center">
                                                         <div>
-                                                            <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Floor</span>
-                                                            <span className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200">{floors.find(f => f.id === selectedRoom!.floor)?.label || 'N/A'}</span>
+                                                            <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-3 block">Zone Category</label>
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                {Object.keys(zoneColors).map(z => (
+                                                                    <button
+                                                                        key={z}
+                                                                        onClick={() => updateRoom(selectedRoom!.id, { zone: z })}
+                                                                        className={`px-3 py-2 rounded-lg text-[10px] font-bold border ${selectedRoom!.zone === z ? 'bg-orange-600 border-orange-600 text-white' : 'bg-white dark:bg-white/5 border-slate-100 dark:border-white/10 text-slate-500 dark:text-gray-400 hover:border-slate-300 dark:hover:border-white/20'}`}
+                                                                    >
+                                                                        {z}
+                                                                    </button>
+                                                                ))}
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const name = prompt("Enter new zone name:");
+                                                                        if (name) handleAddZone(name);
+                                                                    }}
+                                                                    className="px-3 py-2 rounded-lg text-[10px] font-bold border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 flex items-center justify-center gap-1"
+                                                                >
+                                                                    <Plus size={12} /> New
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex flex-col gap-1">
-                                                            <button 
-                                                                onClick={() => {
-                                                                    const currentIdx = floors.findIndex(f => f.id === selectedRoom!.floor);
-                                                                    if (currentIdx < floors.length - 1) {
-                                                                        updateRoom(selectedRoom!.id, { floor: floors[currentIdx + 1].id });
-                                                                    }
-                                                                }}
-                                                                disabled={floors.findIndex(f => f.id === selectedRoom!.floor) >= floors.length - 1}
-                                                                className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400 hover:text-orange-600 disabled:opacity-30 transition-colors"
-                                                                title="Move Up"
-                                                            >
-                                                                <ChevronUp size={14} />
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => {
-                                                                    const currentIdx = floors.findIndex(f => f.id === selectedRoom!.floor);
-                                                                    if (currentIdx > 0) {
-                                                                        updateRoom(selectedRoom!.id, { floor: floors[currentIdx - 1].id });
-                                                                    }
-                                                                }}
-                                                                disabled={floors.findIndex(f => f.id === selectedRoom!.floor) <= 0}
-                                                                className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400 hover:text-orange-600 disabled:opacity-30 transition-colors"
-                                                                title="Move Down"
-                                                            >
-                                                                <ChevronDown size={14} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-3 block">Zone Category</label>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {Object.keys(zoneColors).map(z => (
-                                                            <button
-                                                                key={z}
-                                                                    onClick={() => updateRoom(selectedRoom!.id, { zone: z })}
-                                                                    className={`px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${selectedRoom!.zone === z ? 'bg-orange-600 border-orange-600 text-white' : 'bg-white dark:bg-white/5 border-slate-100 dark:border-white/10 text-slate-500 dark:text-gray-400 hover:border-slate-300 dark:hover:border-white/20'}`}
-                                                            >
-                                                                {z}
-                                                            </button>
-                                                        ))}
-                                                        <button
-                                                            onClick={() => {
-                                                                const name = prompt("Enter new zone name:");
-                                                                if (name) handleAddZone(name);
-                                                            }}
-                                                            className="px-3 py-2 rounded-lg text-[10px] font-bold border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 transition-all flex items-center justify-center gap-1"
-                                                        >
-                                                            <Plus size={12} /> New
-                                                        </button>
-                                                    </div>
-                                                </div>
                                                     </>
                                                 ) : (
                                                     // Multi-selection Summary
@@ -1650,18 +1755,18 @@ export default function App() {
                                                         } else {
                                                             deleteRoom(selectedRoom!.id);
                                                         }
-                                                    }} className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2">
+                                                    }} className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white flex items-center justify-center gap-2">
                                                         <Trash2 size={16} /> Delete Space
                                                     </button>
                                                 </div>
                                             </div>
                                         ) : selectedZone ? (
-                                            <div className="space-y-6 slide-in-bottom">
+                                            <div className="space-y-6">
                                                 <div>
                                                     <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Zone Name</label>
                                                     <div className="flex items-center gap-2">
                                                         <input
-                                                            className="w-full text-xl font-black text-slate-800 dark:text-gray-100 focus:outline-none focus:text-orange-600 transition-colors bg-transparent border-b border-dashed border-slate-300 dark:border-dark-border focus:border-orange-500 pb-1"
+                                                            className="w-full text-xl font-black text-slate-800 dark:text-gray-100 focus:outline-none focus:text-orange-600 bg-transparent border-b border-dashed border-slate-300 dark:border-dark-border focus:border-orange-500 pb-1"
                                                             value={selectedZone}
                                                             onChange={(e) => renameZone(selectedZone, e.target.value)}
                                                         />
@@ -1685,7 +1790,7 @@ export default function App() {
                                                     </label>
                                                     <div className="space-y-2">
                                                         {selectedZoneRooms.map(r => (
-                                                            <div key={r.id} className="flex items-center justify-between p-3 bg-white dark:bg-dark-bg border border-slate-100 dark:border-dark-border rounded-xl hover:shadow-md hover:border-orange-300 dark:hover:border-orange-800 transition-all cursor-pointer group"
+                                                            <div key={r.id} className="flex items-center justify-between p-3 bg-white dark:bg-dark-bg border border-slate-100 dark:border-dark-border rounded-xl hover:shadow-md hover:border-orange-300 dark:hover:border-orange-800 cursor-pointer group"
                                                                 onClick={() => setSelectedRoomIds(new Set([r.id]))}>
                                                                 <span className="text-sm font-bold text-slate-700 dark:text-gray-300 group-hover:text-orange-600">{r.name}</span>
                                                                 <span className="text-[10px] font-sans text-slate-400 dark:text-gray-500">{r.area} m²</span>
@@ -1705,7 +1810,7 @@ export default function App() {
                                     </div>
                                 </>
                             ) : (
-                                <div className="h-full flex flex-col items-center py-6 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 transition-colors" onClick={() => setIsRightSidebarOpen(true)}>
+                                <div className="h-full flex flex-col items-center py-6 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => setIsRightSidebarOpen(true)}>
                                     <div className="flex-1 flex items-center justify-center">
                                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-gray-500 whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Properties</span>
                                     </div>
@@ -1748,7 +1853,7 @@ export default function App() {
                             setShowExportModal(false);
                             return;
                         }
-                        handleExport(format, projectName, rooms, connections, currentFloor, darkMode, zoneColors, floors, appSettings);
+                        handleExport(format, projectName, rooms, connections, currentFloor, darkMode, zoneColors, floors, appSettings, annotations);
                         setShowExportModal(false);
                     }}
                 />

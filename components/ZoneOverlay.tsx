@@ -163,7 +163,7 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
                     {/* Stroke */}
                     <path
                         d={z.path}
-                        className={`${z.color.border.replace('border-', 'stroke-')} opacity-60 transition-colors`}
+                        className={`${z.color.border.replace('border-', 'stroke-')} opacity-60`}
                         strokeWidth={appSettings.strokeWidth / scale}
                         strokeLinejoin="round"
                         strokeLinecap="round"
@@ -173,7 +173,7 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
                     {/* Interactive Fill */}
                     <path
                         d={z.path}
-                        className={`${z.color.bg.replace('bg-', 'fill-')} hover:opacity-60 cursor-grab active:cursor-grabbing pointer-events-auto transition-colors`}
+                        className={`${z.color.bg.replace('bg-', 'fill-')} hover:opacity-60 cursor-grab active:cursor-grabbing pointer-events-auto`}
                         style={{ fillOpacity: appSettings.zoneTransparency }}
                         stroke="none"
                         fill="transparent"

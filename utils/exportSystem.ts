@@ -1,5 +1,6 @@
-import { Room, Connection, Point, ZoneColor, AppSettings } from '../types';
+import { Room, Connection, Point, ZoneColor, AppSettings, Annotation } from '../types';
 import { getConvexHull, createRoundedPath } from './geometry';
+import { SketchManager } from '../SketchManager';
 
 export type ExportFormat = 'png' | 'jpeg' | 'svg' | 'dxf' | 'json';
 const PIXELS_PER_METER = 20;
@@ -38,13 +39,13 @@ export const wrapText = (text: string, maxWidth: number, fontSize: number, fontF
         }
         let remaining = line;
         while (ctx.measureText(remaining).width > maxWidth) {
-             let splitIndex = remaining.length - 1;
-             while (splitIndex > 0 && ctx.measureText(remaining.substring(0, splitIndex) + "-").width > maxWidth) {
-                 splitIndex--;
-             }
-             if (splitIndex <= 0) break;
-             finalLines.push(remaining.substring(0, splitIndex) + "-");
-             remaining = remaining.substring(splitIndex);
+            let splitIndex = remaining.length - 1;
+            while (splitIndex > 0 && ctx.measureText(remaining.substring(0, splitIndex) + "-").width > maxWidth) {
+                splitIndex--;
+            }
+            if (splitIndex <= 0) break;
+            finalLines.push(remaining.substring(0, splitIndex) + "-");
+            remaining = remaining.substring(splitIndex);
         }
         finalLines.push(remaining);
     }
@@ -105,7 +106,8 @@ export const handleExport = async (
     darkMode: boolean,
     zoneColors: Record<string, ZoneColor>,
     floors: { id: number; label: string }[],
-    appSettings: AppSettings
+    appSettings: AppSettings,
+    annotations?: Annotation[]
 ) => {
     // --- JSON Export ---
     if (format === 'json') {
@@ -118,7 +120,8 @@ export const handleExport = async (
             floors,
             currentFloor,
             zoneColors,
-            appSettings
+            appSettings,
+            annotations
         };
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -136,7 +139,7 @@ export const handleExport = async (
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     visibleRooms.forEach(r => {
         const pts = r.polygon || [
-            { x: 0, y: 0 }, { x: r.width, y: 0 }, 
+            { x: 0, y: 0 }, { x: r.width, y: 0 },
             { x: r.width, y: r.height }, { x: 0, y: r.height }
         ];
         pts.forEach(p => {
@@ -160,7 +163,7 @@ export const handleExport = async (
     // --- DXF Export ---
     if (format === 'dxf') {
         let dxf = `0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n`;
-        
+
         visibleRooms.forEach(room => {
             // Draw Shape
             if (room.shape === 'bubble' && room.polygon) {
@@ -169,7 +172,7 @@ export const handleExport = async (
                 // We need to sample the Bezier curves. 
                 // A simple way is to sample t from 0 to 1 for each C command.
                 const points: Point[] = [];
-                
+
                 // Start point
                 if (cmds.length > 0 && cmds[0].type === 'M') {
                     // M is start
@@ -190,8 +193,8 @@ export const handleExport = async (
                     // Sample 10 points per segment
                     for (let t = 0; t < 1; t += 0.1) {
                         const it = 1 - t;
-                        const x = it*it*it*p1.x + 3*it*it*t*cp1x + 3*it*t*t*cp2x + t*t*t*p2.x;
-                        const y = it*it*it*p1.y + 3*it*it*t*cp1y + 3*it*t*t*cp2y + t*t*t*p2.y;
+                        const x = it * it * it * p1.x + 3 * it * it * t * cp1x + 3 * it * t * t * cp2x + t * t * t * p2.x;
+                        const y = it * it * it * p1.y + 3 * it * it * t * cp1y + 3 * it * t * t * cp2y + t * t * t * p2.y;
                         points.push({ x: room.x + x, y: room.y + y });
                     }
                 }
@@ -204,7 +207,7 @@ export const handleExport = async (
             } else {
                 // Rect/Polygon
                 const pts = room.polygon || [
-                    { x: 0, y: 0 }, { x: room.width, y: 0 }, 
+                    { x: 0, y: 0 }, { x: room.width, y: 0 },
                     { x: room.width, y: room.height }, { x: 0, y: room.height }
                 ];
                 dxf += `0\nLWPOLYLINE\n8\n${room.zone}\n90\n${pts.length}\n70\n1\n`;
@@ -214,18 +217,18 @@ export const handleExport = async (
             }
 
             // Text Label
-            const cx = (room.polygon ? 0 : room.width/2) + (room.polygon ? calculateCentroid(room.polygon).x : 0);
-            const cy = (room.polygon ? 0 : room.height/2) + (room.polygon ? calculateCentroid(room.polygon).y : 0);
+            const cx = (room.polygon ? 0 : room.width / 2) + (room.polygon ? calculateCentroid(room.polygon).x : 0);
+            const cy = (room.polygon ? 0 : room.height / 2) + (room.polygon ? calculateCentroid(room.polygon).y : 0);
             const absX = room.x + cx + offsetX;
             const absY = -(room.y + cy + offsetY);
-            
+
             const width = room.polygon ? (Math.max(...room.polygon.map(p => p.x)) - Math.min(...room.polygon.map(p => p.x))) : room.width;
             const lines = wrapText(room.name, width - 10, appSettings.fontSize);
             const lineHeight = appSettings.fontSize * 1.2;
             const totalHeight = lines.length * lineHeight;
-            
+
             lines.forEach((line, i) => {
-                const yPos = absY + (totalHeight/2) - (i * lineHeight) - (lineHeight/2);
+                const yPos = absY + (totalHeight / 2) - (i * lineHeight) - (lineHeight / 2);
                 dxf += `0\nTEXT\n8\nLabels\n10\n${absX}\n20\n${yPos}\n40\n${appSettings.fontSize}\n1\n${line}\n72\n4\n11\n${absX}\n21\n${yPos}\n`;
             });
         });
@@ -243,8 +246,28 @@ export const handleExport = async (
             .text { font-family: 'Inter', sans-serif; text-anchor: middle; dominant-baseline: middle; }
             .title { font-weight: bold; font-size: ${appSettings.fontSize}px; }
             .subtitle { font-size: ${appSettings.fontSize * 0.8}px; fill: #666; }
-        </style>`;
-    
+        </style>
+        <defs>
+          <marker id="marker-arrow-start" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 10 0 L 0 5 L 10 10 z" fill="context-stroke" />
+          </marker>
+          <marker id="marker-arrow-end" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+          </marker>
+          <marker id="marker-circle-start" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4">
+            <circle cx="5" cy="5" r="5" fill="context-stroke" />
+          </marker>
+          <marker id="marker-circle-end" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4">
+            <circle cx="5" cy="5" r="5" fill="context-stroke" />
+          </marker>
+          <marker id="marker-square-start" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4">
+             <rect x="0" y="0" width="10" height="10" fill="context-stroke" />
+          </marker>
+          <marker id="marker-square-end" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4">
+             <rect x="0" y="0" width="10" height="10" fill="context-stroke" />
+          </marker>
+        </defs>`;
+
     // Background
     if (format === 'jpeg') {
         const bgColor = darkMode ? '#1a1a1a' : '#f0f2f5';
@@ -256,7 +279,7 @@ export const handleExport = async (
 
     visibleRooms.forEach(r => {
         if (!zones[r.zone]) zones[r.zone] = [];
-        
+
         if (r.polygon && r.polygon.length > 0) {
             r.polygon.forEach(p => {
                 zones[r.zone].push({ x: r.x + p.x, y: r.y + p.y });
@@ -297,7 +320,7 @@ export const handleExport = async (
         const strokeWidth = r.style?.strokeWidth ?? appSettings.strokeWidth;
         const opacity = r.style?.opacity ?? 0.9;
         let d = "";
-        
+
         if (r.shape === 'bubble' && r.polygon) {
             const cmds = getBubblePathCommands(r.polygon);
             cmds.forEach(cmd => {
@@ -319,11 +342,11 @@ export const handleExport = async (
             }
         }
 
-        const cx = (r.polygon ? 0 : r.width/2) + (r.polygon ? calculateCentroid(r.polygon).x : 0);
-        const cy = (r.polygon ? 0 : r.height/2) + (r.polygon ? calculateCentroid(r.polygon).y : 0);
+        const cx = (r.polygon ? 0 : r.width / 2) + (r.polygon ? calculateCentroid(r.polygon).x : 0);
+        const cy = (r.polygon ? 0 : r.height / 2) + (r.polygon ? calculateCentroid(r.polygon).y : 0);
 
-        const width = (r.polygon && r.polygon.length > 0) ? 
-            (Math.max(...r.polygon.map(p => p.x)) - Math.min(...r.polygon.map(p => p.x))) : 
+        const width = (r.polygon && r.polygon.length > 0) ?
+            (Math.max(...r.polygon.map(p => p.x)) - Math.min(...r.polygon.map(p => p.x))) :
             r.width;
         const lines = wrapText(r.name, width - 16, appSettings.fontSize);
         const lineHeight = appSettings.fontSize * 1.2;
@@ -335,9 +358,25 @@ export const handleExport = async (
             <text x="${cx}" y="${startY}" class="text title" fill="#1e293b">
                 ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : lineHeight}">${line}</tspan>`).join('')}
             </text>
-            <text x="${cx}" y="${cy + 8 + (lines.length > 1 ? (lines.length * lineHeight)/2 : 0)}" class="text subtitle">${r.area} m²</text>
+            <text x="${cx}" y="${cy + 8 + (lines.length > 1 ? (lines.length * lineHeight) / 2 : 0)}" class="text subtitle">${r.area} m²</text>
         </g>`;
     });
+
+    // Annotations
+    if (annotations) {
+        annotations.filter(ann => ann.floor === currentFloor).forEach(ann => {
+            if (ann.type === 'text') {
+                const textAlign = ann.style.textAlign === 'center' ? 'middle' : ann.style.textAlign === 'right' ? 'end' : 'start';
+                svgContent += `<text x="${ann.points[0].x}" y="${ann.points[0].y}" fill="${ann.style.stroke}" font-size="${ann.style.fontSize || 14}" font-family="${ann.style.fontFamily || 'Inter, sans-serif'}" font-weight="${ann.style.fontWeight || 'normal'}" text-anchor="${textAlign}" dominant-baseline="middle">${ann.style.text}</text>`;
+                return;
+            }
+
+            const path = SketchManager.generatePath(ann);
+            const markerStart = SketchManager.getMarkerUrl('start', ann.style.startCap);
+            const markerEnd = SketchManager.getMarkerUrl('end', ann.style.endCap);
+            svgContent += `<path d="${path}" stroke="${ann.style.stroke}" stroke-width="${ann.style.strokeWidth}" stroke-dasharray="${ann.style.strokeDash || 'none'}" fill="none" stroke-linecap="round" stroke-linejoin="round" marker-start="${markerStart}" marker-end="${markerEnd}" />`;
+        });
+    }
 
     // Scale Bar (Bottom Right)
     const scaleBarLength = 10 * PIXELS_PER_METER; // 10 meters
@@ -365,7 +404,7 @@ export const handleExport = async (
     // --- PNG / JPEG Export ---
     const img = new Image();
     img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgContent)));
-    
+
     await new Promise((resolve) => { img.onload = resolve; });
 
     // High Resolution Export (approx 300 DPI relative to screen 72 DPI -> 4.16x)
@@ -385,9 +424,9 @@ export const handleExport = async (
         ctx.fillStyle = darkMode ? '#1a1a1a' : '#f0f2f5';
         ctx.fillRect(-offsetX, -offsetY, width, height);
     }
-    
+
     ctx.drawImage(img, -offsetX, -offsetY, width, height);
-    
+
     const dataUrl = canvas.toDataURL(`image/${format}`);
     triggerDownload(dataUrl, `${projectName}-floor-${currentFloor}.${format}`);
 };
@@ -436,7 +475,7 @@ export const getHexColorForZone = (zone: string, zoneColors: Record<string, Zone
     // For dynamic zones, we might need a better way to get hex from tailwind classes or just generate a hash color
     // For now, fallback to a hash-based color or default if not in standard map
     if (map[zone]) return map[zone];
-    
+
     // Fallback for custom zones - generate a consistent color from string
     let hash = 0;
     for (let i = 0; i < zone.length; i++) {

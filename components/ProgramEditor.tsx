@@ -48,7 +48,7 @@ const NameInput = ({ value, onChange, onFocus, highlight, placeholder }: any) =>
 
     return (
         <input
-            className="w-full bg-transparent font-bold text-slate-700 dark:text-gray-200 text-sm focus:outline-none focus:text-orange-600 transition-colors border-b border-transparent focus:border-orange-500/20"
+            className="w-full bg-transparent font-bold text-slate-700 dark:text-gray-200 text-sm focus:outline-none focus:text-orange-600 border-b border-transparent focus:border-orange-500/20"
             value={value}
             onChange={onChange}
             onFocus={(e) => { setIsFocused(true); onFocus?.(); }}
@@ -170,7 +170,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
     };
 
     return (
-        <div className="h-full w-full bg-slate-50 dark:bg-dark-bg flex font-sans text-slate-900 dark:text-gray-100 transition-colors duration-300">
+        <div className="h-full w-full bg-slate-50 dark:bg-dark-bg flex font-sans text-slate-900 dark:text-gray-100">
             <style>{`
                 input[type=number]::-webkit-inner-spin-button, 
                 input[type=number]::-webkit-outer-spin-button { 
@@ -196,29 +196,29 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                             />
                         </div>
                         <div className="flex gap-2">
-                            <button onClick={() => setShowAiModal(true)} className="h-8 px-3 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/30 rounded-lg text-[10px] font-black hover:bg-orange-100 dark:hover:bg-orange-900/30 flex items-center gap-2 uppercase tracking-widest transition-colors">
+                            <button onClick={() => setShowAiModal(true)} className="h-8 px-3 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/30 rounded-lg text-[10px] font-black hover:bg-orange-100 dark:hover:bg-orange-900/30 flex items-center gap-2 uppercase tracking-widest">
                                 <Wand2 size={16} /> AI Suggest
                             </button>
-                            <button onClick={() => addRoom({ name: 'New Space', area: 15, zone: 'Default' })} className="h-8 px-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border text-slate-700 dark:text-gray-300 rounded-lg text-[10px] font-black hover:border-orange-500 hover:text-orange-600 flex items-center gap-2 uppercase tracking-widest shadow-sm transition-all">
+                            <button onClick={() => addRoom({ name: 'New Space', area: 15, zone: 'Default' })} className="h-8 px-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border text-slate-700 dark:text-gray-300 rounded-lg text-[10px] font-black hover:border-orange-500 hover:text-orange-600 flex items-center gap-2 uppercase tracking-widest shadow-sm">
                                 <Plus size={16} /> Add Space
                             </button>
                         </div>
                     </div>
 
                     {/* Table */}
-                    <div className="flex-1 bg-white dark:bg-dark-surface rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border overflow-hidden flex flex-col transition-colors">
+                    <div className="flex-1 bg-white dark:bg-dark-surface rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border overflow-hidden flex flex-col">
                         <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left border-collapse">
                                 <thead className="bg-slate-50 dark:bg-white/5 sticky top-0 z-10 border-b border-slate-200 dark:border-dark-border backdrop-blur-md">
                                     <tr>
                                         <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-12 text-center">#</th>
-                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-orange-600 transition-colors group select-none" onClick={() => handleHeaderClick('name')}>
+                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-orange-600 group select-none" onClick={() => handleHeaderClick('name')}>
                                             <div className="flex items-center gap-1">Space Name {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}</div>
                                         </th>
-                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-32 cursor-pointer hover:text-orange-600 transition-colors group select-none" onClick={() => handleHeaderClick('area')}>
+                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-32 cursor-pointer hover:text-orange-600 group select-none" onClick={() => handleHeaderClick('area')}>
                                             <div className="flex items-center gap-1">Area (m²) {sortConfig.key === 'area' && (sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}</div>
                                         </th>
-                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-48 cursor-pointer hover:text-orange-600 transition-colors group select-none" onClick={() => handleHeaderClick('zone')}>
+                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-48 cursor-pointer hover:text-orange-600 group select-none" onClick={() => handleHeaderClick('zone')}>
                                             <div className="flex items-center gap-1">Zone {sortConfig.key === 'zone' && (sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}</div>
                                         </th>
                                         <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16 text-center">Action</th>
@@ -245,7 +245,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                     {processedData.map((group) => (
                                         <React.Fragment key={group.zone}>
                                             {/* Zone Header Row */}
-                                            <tr className="bg-slate-50/80 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors group">
+                                            <tr className="bg-slate-50/80 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 group">
                                                 <td className="px-4 py-2 text-center cursor-pointer" onClick={() => toggleZone(group.zone)}>
                                                     {collapsedZones.has(group.zone) ? <ChevronRight size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                                                 </td>
@@ -268,7 +268,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{group.rooms.length} Spaces</span>
                                                 </td>
                                                 <td className="px-4 py-2 text-center">
-                                                    <button onClick={() => addRoom({ zone: group.zone })} className="p-1 text-slate-400 hover:text-orange-600 transition-colors opacity-0 group-hover:opacity-100" title="Add Space to Zone">
+                                                    <button onClick={() => addRoom({ zone: group.zone })} className="p-1 text-slate-400 hover:text-orange-600 opacity-0 group-hover:opacity-100" title="Add Space to Zone">
                                                         <Plus size={14} />
                                                     </button>
                                                 </td>
@@ -276,7 +276,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                             
                                             {/* Space Rows */}
                                             {!collapsedZones.has(group.zone) && group.rooms.map((room, idx) => (
-                                                <tr key={room.id} className="group/row hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                                                <tr key={room.id} className="group/row hover:bg-slate-50 dark:hover:bg-white/5">
                                                     <td className="px-4 py-1.5 text-[10px] font-mono text-slate-300 text-center">{idx + 1}</td>
                                                     <td className="px-4 py-1.5">
                                                         <NameInput
@@ -291,7 +291,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                                         <div className="flex items-center gap-1">
                                                             <input
                                                                 type="number"
-                                                                className="w-16 bg-transparent border-b border-transparent focus:border-orange-500/50 text-xs font-bold text-slate-600 dark:text-gray-300 focus:outline-none text-right transition-all"
+                                                                className="w-16 bg-transparent border-b border-transparent focus:border-orange-500/50 text-xs font-bold text-slate-600 dark:text-gray-300 focus:outline-none text-right"
                                                                 value={room.area}
                                                                 onChange={(e) => updateRoom(room.id, { area: Number(e.target.value) })}
                                                                 onFocus={onInteractionStart}
@@ -301,7 +301,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                                     <td className="px-4 py-1.5">
                                                         <div className="relative">
                                                             <select
-                                                                className={`w-full appearance-none pl-2 pr-6 py-1 rounded-md text-[9px] font-black uppercase tracking-wider focus:outline-none cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-white/20 focus:border-orange-500 transition-all bg-transparent text-slate-500`}
+                                                                className={`w-full appearance-none pl-2 pr-6 py-1 rounded-md text-[9px] font-black uppercase tracking-wider focus:outline-none cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-white/20 focus:border-orange-500 bg-transparent text-slate-500`}
                                                                 value={room.zone}
                                                                 onChange={(e) => updateRoom(room.id, { zone: e.target.value })}
                                                                 onFocus={onInteractionStart}
@@ -312,7 +312,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-1.5 text-center">
-                                                        <button onClick={() => deleteRoom(room.id)} className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover/row:opacity-100">
+                                                        <button onClick={() => deleteRoom(room.id)} className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md opacity-0 group-hover/row:opacity-100">
                                                             <Trash2 size={12} />
                                                         </button>
                                                     </td>
@@ -369,7 +369,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                     const name = prompt("Enter new zone name:");
                                     if (name) onAddZone(name);
                                 }}
-                                className="px-3 py-2 rounded-lg text-[10px] font-black border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 transition-all flex items-center justify-center gap-1"
+                                className="px-3 py-2 rounded-lg text-[10px] font-black border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 flex items-center justify-center gap-1"
                             >
                                 <Plus size={12} /> New
                             </button>
@@ -383,7 +383,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                     </div>
                                     <div className="h-1.5 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
                                         <div
-                                            className={`h-full ${zoneColors[zone]?.bg.replace('bg-', 'bg-') || 'bg-slate-400'} ${zoneColors[zone]?.border?.replace('border-', 'bg-')} transition-all duration-1000`}
+                                            className={`h-full ${zoneColors[zone]?.bg.replace('bg-', 'bg-') || 'bg-slate-400'} ${zoneColors[zone]?.border?.replace('border-', 'bg-')}`}
                                             style={{ width: `${((area as number) / (totalArea as number)) * 100}%` }}
                                         />
                                     </div>
@@ -397,12 +397,12 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
             {/* AI Modal */}
             {showAiModal && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-8">
-                    <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-purple-50/50">
                             <h2 className="text-purple-900 font-black text-lg flex items-center gap-2">
                                 <Wand2 size={20} className="text-purple-600" /> AI Program Generator
                             </h2>
-                            <button onClick={() => setShowAiModal(false)} className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center text-slate-400 transition-colors">
+                            <button onClick={() => setShowAiModal(false)} className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center text-slate-400">
                                 <X size={20} />
                             </button>
                         </div>
@@ -415,11 +415,11 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                 onChange={(e) => setAiPrompt(e.target.value)}
                             />
                             <div className="mt-6 flex justify-end gap-3">
-                                <button onClick={() => setShowAiModal(false)} className="px-5 py-2.5 text-slate-500 font-bold text-xs uppercase tracking-wider hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
+                                <button onClick={() => setShowAiModal(false)} className="px-5 py-2.5 text-slate-500 font-bold text-xs uppercase tracking-wider hover:bg-slate-100 rounded-xl">Cancel</button>
                                 <button
                                     onClick={handleAiGenerate}
                                     disabled={isAiLoading || !aiPrompt.trim()}
-                                    className="px-6 py-2.5 bg-purple-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-purple-700 transition-all shadow-lg shadow-purple-200 disabled:opacity-50 flex items-center gap-2"
+                                    className="px-6 py-2.5 bg-purple-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-purple-700 shadow-lg shadow-purple-200 disabled:opacity-50 flex items-center gap-2"
                                 >
                                     {isAiLoading ? "Generating..." : "Generate Program"}
                                 </button>

@@ -144,3 +144,29 @@ export interface AppSettings {
   snapToObjects: boolean;
   snapWhileScaling: boolean;
 }
+
+export type AnnotationType = 'line' | 'polyline' | 'arc' | 'bezier' | 'text';
+export type ArrowCapType = 'none' | 'arrow' | 'circle' | 'square';
+
+export interface Annotation {
+  id: string;
+  type: AnnotationType;
+  points: Point[];
+  floor: number;
+  style: {
+    stroke: string;
+    strokeWidth: number;
+    strokeDash?: string;
+    fill?: string;
+    opacity: number;
+    startCap?: ArrowCapType;
+    endCap?: ArrowCapType;
+    fillet?: number; // for polylines
+    fontFamily?: string;
+    fontSize?: number;
+    fontWeight?: string;
+    textAlign?: 'left' | 'center' | 'right';
+    text?: string;
+  };
+  handles?: Point[]; // for Bezier curves
+}

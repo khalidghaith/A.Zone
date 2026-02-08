@@ -65,7 +65,7 @@ export const InputSection: React.FC<InputSectionProps> = ({ onDataParsed, apiKey
           disabled={isLoading || !input.trim()}
           className="w-full mt-4 py-3 bg-primary text-white rounded-xl font-bold hover:bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          {isLoading ? <Loader2 className="animate-spin" /> : <Wand2 size={18} />}
+          {isLoading ? <Loader2 /> : <Wand2 size={18} />}
           Generate Project
         </button>
       </div>

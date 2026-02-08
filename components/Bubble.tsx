@@ -26,6 +26,7 @@ interface BubbleProps {
     zoneColors: Record<string, ZoneColor>;
     onDragEnd?: (room: Room, e: MouseEvent) => void;
     otherRooms?: Room[];
+    isSketchMode?: boolean;
 }
 
 // area utility
@@ -65,12 +66,12 @@ const calculateCurvedArea = (points: Point[]): number => {
             const t = j / steps;
             const it = 1 - t;
             // Cubic Bezier formula
-            const x = it*it*it*p1.x + 3*it*it*t*cp1x + 3*it*t*t*cp2x + t*t*t*p2.x;
-            const y = it*it*it*p1.y + 3*it*it*t*cp1y + 3*it*t*t*cp2y + t*t*t*p2.y;
+            const x = it * it * it * p1.x + 3 * it * it * t * cp1x + 3 * it * t * t * cp2x + t * t * t * p2.x;
+            const y = it * it * it * p1.y + 3 * it * it * t * cp1y + 3 * it * t * t * cp2y + t * t * t * p2.y;
 
             // Shoelace formula step
             area += prevX * y - x * prevY;
-            
+
             prevX = x;
             prevY = y;
         }
@@ -81,9 +82,9 @@ const calculateCurvedArea = (points: Point[]): number => {
 // Catmull-Rom to Bezier conversion for smooth bubble curves
 const createBubblePath = (points: Point[]): string => {
     if (points.length < 3) return "";
-    
+
     let d = `M ${points[0].x},${points[0].y}`;
-    
+
     for (let i = 0; i < points.length; i++) {
         const p0 = points[(i - 1 + points.length) % points.length];
         const p1 = points[i];
@@ -98,7 +99,7 @@ const createBubblePath = (points: Point[]): string => {
 
         d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
     }
-    
+
     return d + " Z";
 };
 
@@ -117,7 +118,7 @@ const RenderCorner = ({ cursor, pos, zoomScale, onMouseDown }: { cursor: string,
         style={{ ...pos, transform: `translate(-50%, -50%) scale(${1 / zoomScale})` }}
     >
         <div
-            className="w-3 h-3 bg-white border-2 border-orange-600 rounded-full hover:bg-orange-600 transition-all cursor-pointer shadow-lg active:scale-150"
+            className="w-3 h-3 bg-white border-2 border-orange-600 rounded-full hover:bg-orange-600 cursor-pointer shadow-lg active:scale-150"
             style={{ cursor }}
             onMouseDown={onMouseDown}
         />
@@ -128,7 +129,7 @@ const ROTATE_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.or
 
 const BubbleComponent: React.FC<BubbleProps> = ({
     room, zoomScale, updateRoom, isSelected, onSelect, diagramStyle, snapEnabled, snapPixelUnit,
-    getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors, appSettings, zoneColors, onDragEnd, onDragStart, onMove, isAnyDragging, otherRooms
+    getSnappedPosition, onLinkToggle, isLinkingSource, pixelsPerMeter = 20, floors, appSettings, zoneColors, onDragEnd, onDragStart, onMove, isAnyDragging, otherRooms, isSketchMode
 }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [isRotating, setIsRotating] = useState(false);
@@ -237,7 +238,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         e.stopPropagation();
         onDragStart?.();
         setIsTextDragging(true);
-        
+
         const currentTextPos = room.textPos || centroid;
         startDragState.current = {
             ...startDragState.current,
@@ -290,13 +291,13 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 // 2. Calculate Raw Target Dimensions based on cursor
                 const startEdgeX = resizeHandle.includes('w') ? s.roomX : s.roomX + s.roomW;
                 const startEdgeY = resizeHandle.includes('n') ? s.roomY : s.roomY + s.roomH;
-                
+
                 const currentEdgeX = startEdgeX + dxWorld;
                 const currentEdgeY = startEdgeY + dyWorld;
 
                 let rawW = Math.abs(currentEdgeX - anchorX);
                 let rawH = Math.abs(currentEdgeY - anchorY);
-                
+
                 rawW = Math.max(minSize, rawW);
                 rawH = Math.max(minSize, rawH);
 
@@ -402,7 +403,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 // --- BUBBLE PHYSICS: AREA PRESERVATION ---
                 const newPoints = [...polygonSnapshot];
                 const v = newPoints[draggedVertex];
-                
+
                 // 1. Move the dragged vertex to mouse position
                 const targetX = v.x + dxWorld;
                 const targetY = v.y + dyWorld;
@@ -411,10 +412,10 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 // 2. Calculate current area and centroid
                 const currentArea = calculateCurvedArea(newPoints);
                 const targetArea = room.area * (pixelsPerMeter * pixelsPerMeter); // Target area in pixels
-                
+
                 if (currentArea > 100) { // Avoid division by zero or tiny polys
                     const centroid = calculateCentroid(newPoints);
-                    
+
                     // 3. Calculate Scale Factor needed to restore area
                     const scale = Math.sqrt(targetArea / currentArea);
 
@@ -427,7 +428,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     // 5. Shift entire shape so dragged vertex stays at mouse cursor
                     const draggedScaled = scaledPoints[draggedVertex];
                     const shift = { x: targetX - draggedScaled.x, y: targetY - draggedScaled.y };
-                    
+
                     const finalPoints = scaledPoints.map(p => ({
                         x: p.x + shift.x,
                         y: p.y + shift.y
@@ -452,10 +453,10 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     if (index >= newPoints.length) return;
 
                     const v = newPoints[index];
-                    
+
                     const rawX = v.x + dxWorld;
                     const rawY = v.y + dyWorld;
-                    
+
                     // Default to grid snap or raw
                     let nx = rawX;
                     let ny = rawY;
@@ -811,17 +812,17 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const handleVertexContextMenu = (e: React.MouseEvent, index: number) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         // Allow removing a point if we have more than 3
         if (activePoints.length > 3) {
             const newPoints = activePoints.filter((_, i) => i !== index);
-            
+
             // Preserve area by scaling if needed, or just update
             // For deletion, we usually accept shape change, but let's try to keep it simple first
             // Recalculate area
             const areaPx = room.shape === 'bubble' ? calculateCurvedArea(newPoints) : calculatePolygonArea(newPoints);
             const newArea = Number((areaPx / (pixelsPerMeter * pixelsPerMeter)).toFixed(2));
-            
+
             updateRoom(room.id, { polygon: newPoints, area: newArea > 0 ? newArea : room.area });
             setSelectedVertices(new Set());
         }
@@ -837,7 +838,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         // Double Click Check: Insert Vertex
         if (e.detail === 2) {
             if (!bubbleRef.current) return;
-            
+
             // Step A: Insert the new point at the exact midpoint of the curve/edge segment.
             const p1 = activePoints[index];
             const p2 = activePoints[(index + 1) % activePoints.length];
@@ -854,7 +855,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             if (room.shape === 'bubble') {
                 // Step B: Before the frame renders, calculate the new curved area.
                 const currentArea = calculateCurvedArea(newPoints);
-                
+
                 // Instantaneous Scaling: If the new point changes the area, apply global scaling factor
                 if (currentArea > 100) { // Avoid division by zero or tiny polys
                     const centroid = calculateCentroid(newPoints);
@@ -932,14 +933,14 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     return (
         <div
             ref={bubbleRef}
-            className={`absolute ${disableTransition ? '' : 'bubble-transition'} pointer-events-auto ${isSelected ? 'z-20' : 'z-10'} ${isLinkingSource ? 'ring-4 ring-yellow-400 ring-offset-2 rounded-xl' : ''}`}
+            className={`absolute ${isSketchMode ? 'pointer-events-none' : 'pointer-events-auto'} ${isSelected ? 'z-20' : 'z-10'} ${isLinkingSource ? 'ring-4 ring-yellow-400 ring-offset-2 rounded-xl' : ''}`}
             style={{
                 transform: `translate3d(${room.x}px, ${room.y}px, 0) rotate(${room.rotation || 0}deg)`,
                 width: (room.polygon || room.shape === 'bubble') ? 0 : room.width,
                 height: (room.polygon || room.shape === 'bubble') ? 0 : room.height,
-                cursor: isDragging ? 'grabbing' : 'grab'
+                cursor: isSketchMode ? 'default' : (isDragging ? 'grabbing' : 'grab')
             }}
-            onMouseDown={handleMouseDown}
+            onMouseDown={isSketchMode ? undefined : handleMouseDown}
         >
             {/* Visual Surface */}
             <div className="relative group w-full h-full">
@@ -958,7 +959,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                                     filter: diagramStyle.shadow === 'shadow-md' ? 'drop-shadow(0 4px 6px rgb(0 0 0 / 0.1))' :
                                         diagramStyle.shadow === 'shadow-sm' ? 'drop-shadow(0 1px 2px rgb(0 0 0 / 0.1))' :
                                             diagramStyle.shadow === 'shadow-none' ? 'none' : 'drop-shadow(0 1px 2px rgb(0 0 0 / 0.1))',
-                                    transition: isInteracting ? 'none' : (room.shape === 'bubble' && wobbleTime > 0 ? 'none' : 'd 0.3s ease')
+                                    transition: 'none'
                                 }}
                             />
                             {/* Polygon Edges (Hit Areas for Editing) */}
@@ -970,7 +971,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                                         x1={p.x} y1={p.y} x2={next.x} y2={next.y}
                                         stroke="transparent"
                                         strokeWidth={10 / zoomScale}
-                                        className="cursor-move hover:stroke-orange-600/20 transition-colors"
+                                        className="cursor-move hover:stroke-orange-600/20"
                                         onMouseEnter={() => setHoveredEdge(i)}
                                         onMouseLeave={() => setHoveredEdge(null)}
                                         onMouseDown={(e) => handleEdgeDown(e, i)}
@@ -982,7 +983,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                         {isSelected && activePoints.map((p, i) => (
                             <div
                                 key={`v-${i}`}
-                                className={`absolute border rounded-full z-[80] hover:scale-150 ${isInteracting ? '' : 'transition-all'} cursor-crosshair ${selectedVertices.has(i) ? 'bg-orange-600 border-white scale-125' : 'bg-white border-orange-600'}`}
+                                className={`absolute border rounded-full z-[80] hover:scale-150 cursor-crosshair ${selectedVertices.has(i) ? 'bg-orange-600 border-white scale-125' : 'bg-white border-orange-600'}`}
                                 style={{
                                     left: p.x, top: p.y,
                                     width: 10 / zoomScale, height: 10 / zoomScale,
@@ -999,13 +1000,13 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     </div>
                 ) : (
                     <div
-                        className={`absolute top-0 left-0 ${diagramStyle.shadow} ${isInteracting ? '' : 'transition-all'} ${!room.style?.fill ? visualStyle.bg : ''} ${!room.style?.stroke ? visualStyle.border : ''}`}
-                        style={{ 
-                            width: room.width, height: room.height, 
+                        className={`absolute top-0 left-0 ${diagramStyle.shadow} ${!room.style?.fill ? visualStyle.bg : ''} ${!room.style?.stroke ? visualStyle.border : ''}`}
+                        style={{
+                            width: room.width, height: room.height,
                             backgroundColor: room.style?.fill,
                             borderColor: room.style?.stroke,
                             borderStyle: 'solid',
-                            borderWidth: (room.style?.strokeWidth ?? appSettings.strokeWidth) / zoomScale, 
+                            borderWidth: (room.style?.strokeWidth ?? appSettings.strokeWidth) / zoomScale,
                             opacity: room.style?.opacity ?? diagramStyle.opacity,
                             borderRadius: (room.style?.cornerRadius ?? appSettings.cornerRadius)
                         }}
@@ -1072,7 +1073,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     >
                         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-px bg-orange-600 h-[30px]" />
                         <div
-                            className="absolute -top-[30px] left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-orange-600 rounded-full hover:bg-orange-600 transition-all shadow-lg active:scale-150"
+                            className="absolute -top-[30px] left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-orange-600 rounded-full hover:bg-orange-600 shadow-lg active:scale-150"
                             style={{ cursor: ROTATE_CURSOR }}
                             onMouseDown={handleRotateStart}
                         />
@@ -1082,9 +1083,9 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 {/* Dimensions Display during Resize */}
                 {resizeHandle && (
                     <>
-                        <div 
-                            className="absolute top-0 left-1/2 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-1 rounded-md pointer-events-none whitespace-nowrap backdrop-blur-sm z-[100]" 
-                            style={{ 
+                        <div
+                            className="absolute top-0 left-1/2 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-1 rounded-md pointer-events-none whitespace-nowrap backdrop-blur-sm z-[100]"
+                            style={{
                                 transform: `translate(-50%, -100%) scale(${1 / zoomScale})`,
                                 transformOrigin: 'bottom center',
                                 marginTop: `${-4 / zoomScale}px`
@@ -1092,9 +1093,9 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                         >
                             {(room.width / pixelsPerMeter).toFixed(2)}m
                         </div>
-                        <div 
-                            className="absolute top-1/2 left-0 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-1 rounded-md pointer-events-none whitespace-nowrap backdrop-blur-sm z-[100]" 
-                            style={{ 
+                        <div
+                            className="absolute top-1/2 left-0 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-1 rounded-md pointer-events-none whitespace-nowrap backdrop-blur-sm z-[100]"
+                            style={{
                                 transform: `translate(-50%, -50%) rotate(-90deg) scale(${1 / zoomScale})`,
                                 transformOrigin: 'center',
                             }}
@@ -1107,21 +1108,21 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 {/* Content */}
                 <div
                     className={`absolute flex flex-col items-center justify-center ${room.isTextUnlocked ? 'pointer-events-auto cursor-move' : 'pointer-events-none'}`}
-                    style={{ 
+                    style={{
                         left: textPos.x - bounds.width / 2,
                         top: textPos.y - bounds.height / 2,
-                        width: bounds.width, 
+                        width: bounds.width,
                         height: bounds.height,
                         transform: `rotate(${- (room.rotation || 0)}deg)`,
-                        transition: isTextDragging ? 'none' : 'left 0.2s, top 0.2s'
+                        transition: 'none'
                     }}
                     onMouseDown={handleTextMouseDown}
                 >
                     <div className="relative flex flex-col items-center w-full">
-                        
-                        <div 
+
+                        <div
                             lang="en"
-                            style={{ 
+                            style={{
                                 fontSize: appSettings.fontSize,
                                 hyphens: 'auto',
                                 WebkitHyphens: 'auto',

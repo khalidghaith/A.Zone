@@ -135,6 +135,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const [resizeHandle, setResizeHandle] = useState<string | null>(null);
     const [rotateTooltip, setRotateTooltip] = useState<{ x: number, y: number, angle: number } | null>(null);
     const [snapLines, setSnapLines] = useState<{ x?: number, y?: number }[]>([]);
+    const [isTextDragging, setIsTextDragging] = useState(false);
 
     // Polygon Editing State
     const [hoveredVertex, setHoveredVertex] = useState<number | null>(null);
@@ -153,7 +154,8 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const bubbleRef = useRef<HTMLDivElement>(null);
     const startDragState = useRef({
         startX: 0, startY: 0,
-        roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height
+        roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height,
+        textX: 0, textY: 0
     });
 
     const getZoneStyle = (z: string) => {
@@ -228,6 +230,20 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         onDragStart?.();
         setIsRotating(true);
         // We don't need to store start state for rotation if we calculate absolute angle from center
+    };
+
+    const handleTextMouseDown = (e: React.MouseEvent) => {
+        if (!room.isTextUnlocked) return;
+        e.stopPropagation();
+        onDragStart?.();
+        setIsTextDragging(true);
+        
+        const currentTextPos = room.textPos || centroid;
+        startDragState.current = {
+            ...startDragState.current,
+            startX: e.clientX, startY: e.clientY,
+            textX: currentTextPos.x, textY: currentTextPos.y
+        };
     };
 
     useEffect(() => {
@@ -601,6 +617,16 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 const newArea = Number((areaPx / (pixelsPerMeter * pixelsPerMeter)).toFixed(2));
                 updateRoom(room.id, { polygon: newPoints, area: newArea > 0 ? newArea : room.area });
 
+            } else if (isTextDragging) {
+                // Moving Text - Need to account for room rotation
+                // Rotate the world delta vector into the room's local coordinate space
+                const angleRad = - (room.rotation || 0) * (Math.PI / 180);
+                const localDx = dxWorld * Math.cos(angleRad) - dyWorld * Math.sin(angleRad);
+                const localDy = dxWorld * Math.sin(angleRad) + dyWorld * Math.cos(angleRad);
+
+                const nX = startDragState.current.textX + localDx;
+                const nY = startDragState.current.textY + localDy;
+                updateRoom(room.id, { textPos: { x: nX, y: nY } });
             } else if (isDragging) {
                 // Moving Whole Room
                 let nX = startDragState.current.roomX + dxWorld;
@@ -658,6 +684,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 setWobbleTime(1.0);
             }
             setIsDragging(false);
+            setIsTextDragging(false);
             setIsRotating(false);
             setRotateTooltip(null);
             setResizeHandle(null);
@@ -669,7 +696,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             if (getSnappedPosition) getSnappedPosition(room, '');
         };
 
-        if (isDragging || isRotating || resizeHandle || draggedVertex !== null || draggedEdge !== null) {
+        if (isDragging || isRotating || resizeHandle || draggedVertex !== null || draggedEdge !== null || isTextDragging) {
             window.addEventListener('mousemove', handleMouseMove);
             window.addEventListener('mouseup', handleMouseUp);
         }
@@ -677,7 +704,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, isRotating, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition, onDragEnd, onMove, isSelected, onSelect, otherRooms, appSettings.snapToObjects, appSettings.snapTolerance, appSettings.snapToGrid, room.x, room.y, room.shape, room.area, pixelsPerMeter]);
+    }, [isDragging, isRotating, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, isTextDragging, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition, onDragEnd, onMove, isSelected, onSelect, otherRooms, appSettings.snapToObjects, appSettings.snapTolerance, appSettings.snapToGrid, room.x, room.y, room.shape, room.area, pixelsPerMeter]);
 
     const handleResizeStart = (e: React.MouseEvent, handle: string) => {
         e.stopPropagation();
@@ -685,7 +712,8 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         setResizeHandle(handle);
         startDragState.current = {
             startX: e.clientX, startY: e.clientY,
-            roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height
+            roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height,
+            textX: 0, textY: 0
         };
     };
 
@@ -709,7 +737,8 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         hasMoved.current = false;
         startDragState.current = {
             startX: e.clientX, startY: e.clientY,
-            roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height
+            roomX: room.x, roomY: room.y, roomW: room.width, roomH: room.height,
+            textX: 0, textY: 0
         };
     };
 
@@ -774,7 +803,8 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         setPolygonSnapshot(activePoints);
         startDragState.current = {
             startX: e.clientX, startY: e.clientY,
-            roomX: 0, roomY: 0, roomW: 0, roomH: 0
+            roomX: 0, roomY: 0, roomW: 0, roomH: 0,
+            textX: 0, textY: 0
         };
     };
 
@@ -885,16 +915,19 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         setPolygonSnapshot(initialPoints);
         startDragState.current = {
             startX: e.clientX, startY: e.clientY,
-            roomX: 0, roomY: 0, roomW: 0, roomH: 0
+            roomX: 0, roomY: 0, roomW: 0, roomH: 0,
+            textX: 0, textY: 0
         };
     };
 
-    const isInteracting = isDragging || isRotating || resizeHandle !== null || draggedVertex !== null || draggedEdge !== null;
+    const isInteracting = isDragging || isRotating || resizeHandle !== null || draggedVertex !== null || draggedEdge !== null || isTextDragging;
     const disableTransition = isInteracting || (isSelected && isAnyDragging);
 
     const wrappedNameLines = useMemo(() => {
         return wrapText(room.name, bounds.width - 16, appSettings.fontSize);
     }, [room.name, bounds.width, appSettings.fontSize]);
+
+    const textPos = room.textPos || centroid;
 
     return (
         <div
@@ -1073,14 +1106,16 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                 {/* Content */}
                 <div
-                    className="absolute flex flex-col items-center justify-center pointer-events-none"
+                    className={`absolute flex flex-col items-center justify-center ${room.isTextUnlocked ? 'pointer-events-auto cursor-move' : 'pointer-events-none'}`}
                     style={{ 
-                        left: centroid.x - bounds.width / 2,
-                        top: centroid.y - bounds.height / 2,
+                        left: textPos.x - bounds.width / 2,
+                        top: textPos.y - bounds.height / 2,
                         width: bounds.width, 
                         height: bounds.height,
-                        transform: `rotate(${- (room.rotation || 0)}deg)` 
+                        transform: `rotate(${- (room.rotation || 0)}deg)`,
+                        transition: isTextDragging ? 'none' : 'left 0.2s, top 0.2s'
                     }}
+                    onMouseDown={handleTextMouseDown}
                 >
                     <div className="relative flex flex-col items-center w-full">
                         

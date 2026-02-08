@@ -12,7 +12,7 @@ import { arrangeRooms } from './utils/layout';
 import {
     Plus, Layers, Map as MapIcon, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
     TableProperties, Hexagon, Circle, Square,
-    LandPlot, ChevronRight, ChevronLeft, Eraser, Key, X, Settings, LayoutTemplate, Trash2,
+    LandPlot, ChevronRight, ChevronLeft, Eraser, Key, X, Settings, LayoutTemplate, Trash2, Lock, Unlock,
     Link, Magnet, Grid, Ruler, Moon, Sun, Maximize, ChevronUp, ChevronDown, Activity
 } from 'lucide-react';
 
@@ -134,6 +134,7 @@ export default function App() {
 
     // UI State
     const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+    const [isInventoryOpen, setIsInventoryOpen] = useState(true);
     const [connectionSourceId, setConnectionSourceId] = useState<string | null>(null);
     const [snapGuides, setSnapGuides] = useState<{ x?: number, y?: number } | null>(null);
     const [isZoneDragging, setIsZoneDragging] = useState(false);
@@ -243,6 +244,15 @@ export default function App() {
             } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
                 redo();
                 e.preventDefault();
+            } else if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                // Do not hijack tab if user is in an input field.
+                const activeEl = document.activeElement;
+                const inInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+
+                if (!inInput) {
+                    e.preventDefault();
+                    setViewMode(prev => prev === 'EDITOR' ? 'CANVAS' : 'EDITOR');
+                }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -425,6 +435,8 @@ export default function App() {
             if (e.target === e.currentTarget) {
                 setSelectedRoomIds(new Set());
                 if (connectionSourceId) setConnectionSourceId(null);
+                // Auto-lock all text when clicking empty space
+                setRooms(prev => prev.map(r => r.isTextUnlocked ? { ...r, isTextUnlocked: false } : r));
             }
         }
     };
@@ -978,7 +990,7 @@ export default function App() {
                 }
             `}</style>
             {/* Premium Header */}
-            <header className="h-12 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] transition-colors duration-300">
+            <header className="h-12 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] transition-colors duration-300 relative">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 group cursor-pointer">
                         <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-orange-200/50 group-hover:scale-105 transition-transform duration-300">
@@ -1024,51 +1036,50 @@ export default function App() {
                             <RotateCcw size={14} />
                         </button>
                     </div>
+                </div>
 
-                    <div className="h-6 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
-                    
-                    {/* Workspace Toggle */}
-                    <div className="flex bg-slate-100/50 dark:bg-white/5 p-0.5 rounded-lg border border-slate-200/50 dark:border-dark-border">
+                {/* Workspace Toggle - Centered */}
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                    <div className="flex bg-slate-100/50 dark:bg-white/5 p-1 rounded-xl border border-slate-200/50 dark:border-dark-border shadow-sm">
                         <button
                             onClick={() => setViewMode('EDITOR')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'EDITOR' ? 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200'}`}
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'EDITOR' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
                         >
-                            <TableProperties size={12} /> Program
+                            <TableProperties size={14} /> Program
                         </button>
                         <button
                             onClick={() => setViewMode('CANVAS')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'CANVAS' ? 'bg-white dark:bg-dark-surface text-orange-600 dark:text-orange-400 shadow-sm' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200'}`}
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'CANVAS' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
                         >
-                            <LandPlot size={12} /> Canvas
+                            <LandPlot size={14} /> Canvas
                         </button>
                     </div>
-
-                    {/* Scale Bar (Header Version - Optional, but easier to see) */}
-                    {viewMode === 'CANVAS' && (
-                        <>
-                            <div className="h-6 w-px bg-slate-200/60 mx-1" />
-                            <div className="flex items-center gap-2 text-slate-400">
-                                <div className="h-1 w-12 bg-slate-300 rounded-full relative">
-                            <div className="absolute -top-3 left-0 text-[9px] font-bold">0m</div>
-                            <div className="absolute -top-3 right-0 text-[9px] font-bold">{(16 / scale / PIXELS_PER_METER * 4).toFixed(1)}m</div>
-                                </div>
-                        <span className="text-[9px] font-black uppercase tracking-widest">Scale</span>
-                            </div>
-                        </>
-                    )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                    <button
-                        onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 group"
-                    >
-                        <Upload size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Export
-                    </button>
+                <div className="flex items-center gap-4">
+                    {/* Scale Bar (Header Version) */}
+                    {viewMode === 'CANVAS' && (
+                        <div className="flex items-center gap-2 text-slate-400">
+                            <div className="h-1 w-12 bg-slate-300 rounded-full relative">
+                                <div className="absolute -top-3 left-0 text-[9px] font-bold">0m</div>
+                                <div className="absolute -top-3 right-0 text-[9px] font-bold">{(16 / scale / PIXELS_PER_METER * 4).toFixed(1)}m</div>
+                            </div>
+                            <span className="text-[9px] font-black uppercase tracking-widest">Scale</span>
+                        </div>
+                    )}
 
-                    <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 cursor-pointer group">
-                        <Download size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Import
-                        <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
-                    </label>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 group"
+                        >
+                            <Upload size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Export
+                        </button>
+
+                        <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 cursor-pointer group">
+                            <Download size={14} className="group-hover:-translate-y-0.5 transition-transform" /> Import
+                            <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
+                        </label>
+                    </div>
                 </div>
             </header>
 
@@ -1090,62 +1101,76 @@ export default function App() {
                     <>
                         <aside 
                             ref={inventoryRef}
-                            className={`w-80 bg-white dark:bg-dark-surface border-r border-slate-200/50 dark:border-dark-border flex flex-col z-30 shadow-[10px_0_30px_rgba(0,0,0,0.02)] translate-x-0 transition-all duration-300 ${isInventoryHovered ? 'ring-2 ring-orange-400 ring-inset bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
+                            className={`${isInventoryOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-r border-slate-200/50 dark:border-dark-border flex flex-col z-30 shadow-[10px_0_30px_rgba(0,0,0,0.02)] transition-all duration-300 ${isInventoryHovered ? 'ring-2 ring-orange-400 ring-inset bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
                             onDragOver={handleInventoryDragOver}
                             onDrop={handleInventoryDrop}
                         >
-                            <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/30 dark:bg-white/5">
-                                <div>
-                                    <h2 className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2 mb-1">
-                                        Space Inventory
-                                    </h2>
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-gray-400">{unplacedRooms.length} spaces pending placement</p>
-                                </div>
-                                <span className="w-8 h-8 flex items-center justify-center bg-slate-200/50 dark:bg-white/10 rounded-xl text-xs font-black text-slate-600 dark:text-gray-300 border border-slate-200/50 dark:border-white/5">{unplacedRooms.length}</span>
-                            </div>
-                            <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-gradient-to-b from-white to-slate-50/50 dark:from-dark-surface dark:to-dark-bg">
-                                {unplacedRooms.length > 0 ? unplacedRooms.map(room => (
-                                    <div
-                                        key={room.id}
-                                        draggable
-                                        onDragStart={(e) => handleDragStart(e, room)}
-                                        className="p-5 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm hover:shadow-xl hover:border-primary/20 hover:-translate-y-1 transition-all duration-300 cursor-grab active:cursor-grabbing group bg-white dark:bg-dark-surface"
-                                        onClick={() => {
-                                            /* Optional: keep click to place at center if drag fails or as alternative */
-                                            /* placeRoom(room); */
-                                        }}
-                                    >
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div>
-                                                <span className="font-black text-slate-800 dark:text-gray-200 text-sm tracking-tight block group-hover:text-orange-600 transition-colors">{room.name}</span>
-                                                <span className="text-[10px] text-slate-400 dark:text-gray-500 font-medium">Drag to canvas to place</span>
-                                            </div>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handlePlaceCenter(room); }}
-                                                className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-white/5 flex items-center justify-center text-slate-300 dark:text-gray-500 group-hover:bg-orange-500/10 group-hover:text-orange-600 transition-all hover:scale-110 active:scale-95"
+                            {isInventoryOpen ? (
+                                <>
+                                    <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/30 dark:bg-white/5 h-20">
+                                        <div>
+                                            <h2 className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2 mb-1">
+                                                Space Inventory
+                                            </h2>
+                                            <p className="text-[10px] font-bold text-slate-500 dark:text-gray-400">{unplacedRooms.length} spaces pending placement</p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-8 h-8 flex items-center justify-center bg-slate-200/50 dark:bg-white/10 rounded-xl text-xs font-black text-slate-600 dark:text-gray-300 border border-slate-200/50 dark:border-white/5">{unplacedRooms.length}</span>
+                                            <button onClick={() => setIsInventoryOpen(false)} className="text-slate-300 hover:text-slate-600 dark:text-gray-600 dark:hover:text-gray-400"><ChevronLeft size={18} /></button>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-gradient-to-b from-white to-slate-50/50 dark:from-dark-surface dark:to-dark-bg">
+                                        {unplacedRooms.length > 0 ? unplacedRooms.map(room => (
+                                            <div
+                                                key={room.id}
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, room)}
+                                                className="p-5 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm hover:shadow-xl hover:border-primary/20 hover:-translate-y-1 transition-all duration-300 cursor-grab active:cursor-grabbing group bg-white dark:bg-dark-surface"
+                                                onClick={() => {
+                                                    /* Optional: keep click to place at center if drag fails or as alternative */
+                                                    /* placeRoom(room); */
+                                                }}
                                             >
-                                                <Plus size={16} />
-                                            </button>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className="px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-lg text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-wider">{room.area} m²</span>
-                                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm ${ZONE_COLORS[room.zone]?.bg || 'bg-slate-100'} ${ZONE_COLORS[room.zone]?.text || 'text-slate-500'}`}>{room.zone}</span>
-                                        </div>
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <div>
+                                                        <span className="font-black text-slate-800 dark:text-gray-200 text-sm tracking-tight block group-hover:text-orange-600 transition-colors">{room.name}</span>
+                                                        <span className="text-[10px] text-slate-400 dark:text-gray-500 font-medium">Drag to canvas to place</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handlePlaceCenter(room); }}
+                                                        className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-white/5 flex items-center justify-center text-slate-300 dark:text-gray-500 group-hover:bg-orange-500/10 group-hover:text-orange-600 transition-all hover:scale-110 active:scale-95"
+                                                    >
+                                                        <Plus size={16} />
+                                                    </button>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-lg text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-wider">{room.area} m²</span>
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm ${ZONE_COLORS[room.zone]?.bg || 'bg-slate-100'} ${ZONE_COLORS[room.zone]?.text || 'text-slate-500'}`}>{room.zone}</span>
+                                                </div>
+                                            </div>
+                                        )) : (
+                                            <div className="text-center py-24 opacity-30 px-10">
+                                                <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                                                    <Package size={32} className="text-slate-400 dark:text-gray-500" />
+                                                </div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed text-slate-500 dark:text-gray-500">Inventory Clear<br />All elements are in the design context.</p>
+                                            </div>
+                                        )}
                                     </div>
-                                )) : (
-                                    <div className="text-center py-24 opacity-30 px-10">
-                                        <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                                            <Package size={32} className="text-slate-400 dark:text-gray-500" />
-                                        </div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed text-slate-500 dark:text-gray-500">Inventory Clear<br />All elements are in the design context.</p>
+                                    <div className="p-6 bg-slate-50/50 dark:bg-white/5 border-t border-slate-100 dark:border-dark-border">
+                                        <button onClick={() => addRoom({})} className="w-full py-4 bg-white dark:bg-dark-surface border border-slate-200/80 dark:border-dark-border rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-gray-300 hover:border-orange-500 hover:text-orange-600 hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-3 shadow-sm group">
+                                            <Plus size={18} className="group-hover:rotate-90 transition-transform" /> Add Manual Space
+                                        </button>
                                     </div>
-                                )}
-                            </div>
-                            <div className="p-6 bg-slate-50/50 dark:bg-white/5 border-t border-slate-100 dark:border-dark-border">
-                                <button onClick={() => addRoom({})} className="w-full py-4 bg-white dark:bg-dark-surface border border-slate-200/80 dark:border-dark-border rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-gray-300 hover:border-orange-500 hover:text-orange-600 hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-3 shadow-sm group">
-                                    <Plus size={18} className="group-hover:rotate-90 transition-transform" /> Add Manual Space
-                                </button>
-                            </div>
+                                </>
+                            ) : (
+                                <div className="h-full flex flex-col items-center py-6 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 transition-colors" onClick={() => setIsInventoryOpen(true)}>
+                                    <div className="flex-1 flex items-center justify-center">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-gray-500 whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Inventory</span>
+                                    </div>
+                                    <ChevronRight size={18} className="text-slate-400 mb-4" />
+                                </div>
+                            )}
                         </aside>
 
                         <main
@@ -1266,6 +1291,10 @@ export default function App() {
                                             if (connectionSourceId) {
                                                 toggleLink(id);
                                                 return;
+                                            }
+                                            // Auto-lock text of other rooms when selecting a new one
+                                            if (!multi) {
+                                                setRooms(prev => prev.map(r => (r.id !== id && r.isTextUnlocked) ? { ...r, isTextUnlocked: false } : r));
                                             }
                                             setSelectedRoomIds(prev => {
                                                 const next = new Set(multi ? prev : []);
@@ -1410,257 +1439,280 @@ export default function App() {
                             </div>
                         </main>
 
-                        {isRightSidebarOpen && (
-                    <aside className="w-72 bg-white dark:bg-dark-surface border-l border-slate-200 dark:border-dark-border flex flex-col z-20 shadow-2xl">
-                        <div className="p-4 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/50 dark:bg-white/5">
-                            <h2 className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest truncate max-w-[180px]">
-                                {isMultiSelection ? 'Multi-Selection' : selectedRoom ? 'Space Detail' : selectedZone ? 'Zone Detail' : 'Properties'}
-                            </h2>
-                            <button onClick={() => setIsRightSidebarOpen(false)} className="text-slate-300 dark:text-gray-600 hover:text-slate-600 dark:hover:text-gray-400"><ChevronRight size={18} /></button>
-                        </div>
-                        <div className="flex-1 p-6 overflow-y-auto">
-                            {selectedRoom || isMultiSelection ? (
-                                <div className="space-y-6 slide-in-bottom">
-                                    <div>
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Space Name</label>
-                                        {isMultiSelection ? (
-                                            <div className="text-sm font-bold text-slate-500 italic">{selectedRoomIds.size} spaces selected</div>
-                                        ) : (
-                                            <input
-                                                className="w-full text-xl font-black text-slate-800 dark:text-gray-100 focus:outline-none focus:text-orange-600 transition-colors bg-transparent border-b border-transparent focus:border-orange-500 pb-1"
-                                                value={selectedRoom!.name}
-                                                onChange={(e) => updateRoom(selectedRoom!.id, { name: e.target.value })}
-                                            />
-                                        )}
+                        <aside className={`${isRightSidebarOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-l border-slate-200 dark:border-dark-border flex flex-col z-20 shadow-2xl transition-all duration-300`}>
+                            {isRightSidebarOpen ? (
+                                <>
+                                    <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/50 dark:bg-white/5 h-20">
+                                        <h2 className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest truncate max-w-[180px]">
+                                            {isMultiSelection ? 'Multi-Selection' : selectedRoom ? 'Space Detail' : selectedZone ? 'Zone Detail' : 'Properties'}
+                                        </h2>
+                                        <button onClick={() => setIsRightSidebarOpen(false)} className="text-slate-300 dark:text-gray-600 hover:text-slate-600 dark:hover:text-gray-400"><ChevronRight size={18} /></button>
                                     </div>
+                                    <div className="flex-1 p-6 overflow-y-auto">
+                                        {selectedRoom || isMultiSelection ? (
+                                            <div className="space-y-6 slide-in-bottom">
+                                                <div>
+                                                    <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Space Name</label>
+                                                    {isMultiSelection ? (
+                                                        <div className="text-sm font-bold text-slate-500 italic">{selectedRoomIds.size} spaces selected</div>
+                                                    ) : (
+                                                        <input
+                                                            className="w-full text-xl font-black text-slate-800 dark:text-gray-100 focus:outline-none focus:text-orange-600 transition-colors bg-transparent border-b border-transparent focus:border-orange-500 pb-1"
+                                                            value={selectedRoom!.name}
+                                                            onChange={(e) => updateRoom(selectedRoom!.id, { name: e.target.value })}
+                                                        />
+                                                    )}
+                                                </div>
 
-                                    {/* Shape Conversion Buttons */}
-                                    <div>
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Shape Type</label>
-                                        <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
-                                            <button onClick={() => handleConvertShape('rect')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && (!selectedRoom?.shape || selectedRoom?.shape === 'rect')) || (isMultiSelection && multiSelectionStats?.commonShape === 'rect') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Rectangle"><Square size={16} /></button>
-                                            <button onClick={() => handleConvertShape('polygon')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && selectedRoom?.shape === 'polygon') || (isMultiSelection && multiSelectionStats?.commonShape === 'polygon') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Polygon"><Hexagon size={16} /></button>
-                                            <button onClick={() => handleConvertShape('bubble')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && selectedRoom?.shape === 'bubble') || (isMultiSelection && multiSelectionStats?.commonShape === 'bubble') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Bubble"><Circle size={16} /></button>
-                                        </div>
-                                    </div>
+                                                {/* Shape Conversion Buttons */}
+                                                <div>
+                                                    <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Shape Type</label>
+                                                    <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
+                                                        <button onClick={() => handleConvertShape('rect')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && (!selectedRoom?.shape || selectedRoom?.shape === 'rect')) || (isMultiSelection && multiSelectionStats?.commonShape === 'rect') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Rectangle"><Square size={16} /></button>
+                                                        <button onClick={() => handleConvertShape('polygon')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && selectedRoom?.shape === 'polygon') || (isMultiSelection && multiSelectionStats?.commonShape === 'polygon') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Polygon"><Hexagon size={16} /></button>
+                                                        <button onClick={() => handleConvertShape('bubble')} className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-all ${(!isMultiSelection && selectedRoom?.shape === 'bubble') || (isMultiSelection && multiSelectionStats?.commonShape === 'bubble') ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`} title="Bubble"><Circle size={16} /></button>
+                                                    </div>
+                                                </div>
 
-                                    {/* Link Logic Button */}
-                                    {!isMultiSelection && (
-                                        <div className="space-y-3">
-                                            <button 
-                                                onClick={() => toggleLink(selectedRoom!.id)}
-                                                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2 ${connectionSourceId === selectedRoom!.id ? 'bg-yellow-50 border-yellow-300 text-yellow-600 dark:bg-yellow-900/20 dark:border-yellow-700 dark:text-yellow-400' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-dark-border text-slate-500 dark:text-gray-400 hover:border-orange-500 hover:text-orange-600'}`}
-                                            >
-                                                <Link size={14} className={connectionSourceId === selectedRoom!.id ? 'fill-current' : ''} /> {connectionSourceId === selectedRoom!.id ? 'Cancel Linking' : 'Link Logic'}
-                                            </button>
+                                                {/* Link Logic Button */}
+                                                {!isMultiSelection && (
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => toggleLink(selectedRoom!.id)}
+                                                            className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2 ${connectionSourceId === selectedRoom!.id ? 'bg-yellow-50 border-yellow-300 text-yellow-600 dark:bg-yellow-900/20 dark:border-yellow-700 dark:text-yellow-400' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-dark-border text-slate-500 dark:text-gray-400 hover:border-orange-500 hover:text-orange-600'}`}
+                                                        >
+                                                            <Link size={14} className={connectionSourceId === selectedRoom!.id ? 'fill-current' : ''} /> {connectionSourceId === selectedRoom!.id ? 'Cancel' : 'Link'}
+                                                        </button>
 
-                                            {/* Linked Spaces List */}
-                                            {(() => {
-                                                const linkedConnections = connections.filter(c => c.fromId === selectedRoom!.id || c.toId === selectedRoom!.id);
-                                                if (linkedConnections.length > 0) {
-                                                    return (
-                                                        <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-100 dark:border-dark-border">
-                                                            <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest block mb-2">Linked Spaces</span>
-                                                            <div className="space-y-1.5">
-                                                                {linkedConnections.map(conn => {
-                                                                    const otherId = conn.fromId === selectedRoom!.id ? conn.toId : conn.fromId;
-                                                                    const otherRoom = rooms.find(r => r.id === otherId);
-                                                                    if (!otherRoom) return null;
-                                                                    return (
-                                                                        <div key={conn.id} className="flex items-center justify-between text-xs group">
-                                                                            <span className="font-bold text-slate-600 dark:text-gray-300 flex items-center gap-2">
-                                                                                <div className={`w-2 h-2 rounded-full ${zoneColors[otherRoom.zone]?.bg || 'bg-slate-300'}`} />
-                                                                                {otherRoom.name}
-                                                                            </span>
-                                                                            <button 
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    setConnections(prev => prev.filter(c => c.id !== conn.id));
-                                                                                }}
-                                                                                className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                                                                                title="Unlink"
-                                                                            >
-                                                                                <X size={12} />
-                                                                            </button>
+                                                        <div className="flex items-center bg-slate-100 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-dark-border p-1 gap-1">
+                                                            <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest px-2">Text</span>
+                                                            <button
+                                                                onClick={() => updateRoom(selectedRoom!.id, { isTextUnlocked: !selectedRoom!.isTextUnlocked })}
+                                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${selectedRoom!.isTextUnlocked ? 'bg-white dark:bg-dark-surface text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                                                                title={selectedRoom!.isTextUnlocked ? "Lock Text Position" : "Unlock Text to Move"}
+                                                            >
+                                                                {selectedRoom!.isTextUnlocked ? <Unlock size={14} /> : <Lock size={14} />}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => updateRoom(selectedRoom!.id, { textPos: undefined })}
+                                                                disabled={!selectedRoom!.textPos}
+                                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${!selectedRoom!.textPos ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-400 hover:text-orange-600 hover:bg-white dark:hover:bg-dark-surface hover:shadow-sm dark:text-gray-400'}`}
+                                                                title="Reset Text Position"
+                                                            >
+                                                                <RotateCcw size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {!isMultiSelection && (
+                                                    <div className="space-y-3">
+
+                                                        {/* Linked Spaces List */}
+                                                        {(() => {
+                                                            const linkedConnections = connections.filter(c => c.fromId === selectedRoom!.id || c.toId === selectedRoom!.id);
+                                                            if (linkedConnections.length > 0) {
+                                                                return (
+                                                                    <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-100 dark:border-dark-border">
+                                                                        <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest block mb-2">Linked Spaces</span>
+                                                                        <div className="space-y-1.5">
+                                                                            {linkedConnections.map(conn => {
+                                                                                const otherId = conn.fromId === selectedRoom!.id ? conn.toId : conn.fromId;
+                                                                                const otherRoom = rooms.find(r => r.id === otherId);
+                                                                                if (!otherRoom) return null;
+                                                                                return (
+                                                                                    <div key={conn.id} className="flex items-center justify-between text-xs group">
+                                                                                        <span className="font-bold text-slate-600 dark:text-gray-300 flex items-center gap-2">
+                                                                                            <div className={`w-2 h-2 rounded-full ${zoneColors[otherRoom.zone]?.bg || 'bg-slate-300'}`} />
+                                                                                            {otherRoom.name}
+                                                                                        </span>
+                                                                                        <button 
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                setConnections(prev => prev.filter(c => c.id !== conn.id));
+                                                                                            }}
+                                                                                            className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                                                                                            title="Unlink"
+                                                                                        >
+                                                                                            <X size={12} />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                );
+                                                                            })}
                                                                         </div>
-                                                                    );
-                                                                })}
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
+                                                    </div>
+                                                )}
+
+                                                {!isMultiSelection ? (
+                                                    <>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
+                                                        <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Area</span>
+                                                        <div className="flex items-baseline gap-1">
+                                                    <input
+                                                                type="number" 
+                                                                className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200 bg-transparent border-b border-transparent focus:border-orange-500 outline-none w-full" 
+                                                                value={selectedRoom!.area} 
+                                                                onChange={(e) => {
+                                                                const val = parseFloat(e.target.value);
+                                                                    if (!isNaN(val)) updateRoom(selectedRoom!.id, { area: val });
+                                                            }} />
+                                                            <small className="text-xs opacity-60">m²</small>
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border flex justify-between items-center">
+                                                        <div>
+                                                            <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Floor</span>
+                                                            <span className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200">{floors.find(f => f.id === selectedRoom!.floor)?.label || 'N/A'}</span>
+                                                        </div>
+                                                        <div className="flex flex-col gap-1">
+                                                            <button 
+                                                                onClick={() => {
+                                                                    const currentIdx = floors.findIndex(f => f.id === selectedRoom!.floor);
+                                                                    if (currentIdx < floors.length - 1) {
+                                                                        updateRoom(selectedRoom!.id, { floor: floors[currentIdx + 1].id });
+                                                                    }
+                                                                }}
+                                                                disabled={floors.findIndex(f => f.id === selectedRoom!.floor) >= floors.length - 1}
+                                                                className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400 hover:text-orange-600 disabled:opacity-30 transition-colors"
+                                                                title="Move Up"
+                                                            >
+                                                                <ChevronUp size={14} />
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => {
+                                                                    const currentIdx = floors.findIndex(f => f.id === selectedRoom!.floor);
+                                                                    if (currentIdx > 0) {
+                                                                        updateRoom(selectedRoom!.id, { floor: floors[currentIdx - 1].id });
+                                                                    }
+                                                                }}
+                                                                disabled={floors.findIndex(f => f.id === selectedRoom!.floor) <= 0}
+                                                                className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400 hover:text-orange-600 disabled:opacity-30 transition-colors"
+                                                                title="Move Down"
+                                                            >
+                                                                <ChevronDown size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-3 block">Zone Category</label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {Object.keys(zoneColors).map(z => (
+                                                            <button
+                                                                key={z}
+                                                                    onClick={() => updateRoom(selectedRoom!.id, { zone: z })}
+                                                                    className={`px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${selectedRoom!.zone === z ? 'bg-orange-600 border-orange-600 text-white' : 'bg-white dark:bg-white/5 border-slate-100 dark:border-white/10 text-slate-500 dark:text-gray-400 hover:border-slate-300 dark:hover:border-white/20'}`}
+                                                            >
+                                                                {z}
+                                                            </button>
+                                                        ))}
+                                                        <button
+                                                            onClick={() => {
+                                                                const name = prompt("Enter new zone name:");
+                                                                if (name) handleAddZone(name);
+                                                            }}
+                                                            className="px-3 py-2 rounded-lg text-[10px] font-bold border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 transition-all flex items-center justify-center gap-1"
+                                                        >
+                                                            <Plus size={12} /> New
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                    </>
+                                                ) : (
+                                                    // Multi-selection Summary
+                                                    <div className="space-y-4">
+                                                        <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase">Total Area</span>
+                                                            </div>
+                                                            <div className="text-2xl font-sans font-bold text-slate-800 dark:text-gray-100 tracking-tight">
+                                                                {multiSelectionStats?.totalArea.toFixed(1)} <span className="text-sm font-sans text-slate-400 dark:text-gray-500 font-bold">m²</span>
                                                             </div>
                                                         </div>
-                                                    );
-                                                }
-                                                return null;
-                                            })()}
-                                        </div>
-                                    )}
+                                                        <div className="p-4 bg-white dark:bg-dark-bg border border-slate-100 dark:border-dark-border rounded-xl">
+                                                            <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-2">Breakdown</span>
+                                                            <p className="text-xs font-medium text-slate-600 dark:text-gray-300">{multiSelectionStats?.breakdown}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
 
-                                    {!isMultiSelection ? (
-                                        <>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
-                                            <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Area</span>
-                                            <div className="flex items-baseline gap-1">
-                                        <input
-                                                    type="number" 
-                                                    className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200 bg-transparent border-b border-transparent focus:border-orange-500 outline-none w-full" 
-                                                    value={selectedRoom!.area} 
-                                                    onChange={(e) => {
-                                                    const val = parseFloat(e.target.value);
-                                                        if (!isNaN(val)) updateRoom(selectedRoom!.id, { area: val });
-                                                }} />
-                                                <small className="text-xs opacity-60">m²</small>
-                                            </div>
-                                        </div>
-                                        <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border flex justify-between items-center">
-                                            <div>
-                                                <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-1">Floor</span>
-                                                <span className="text-lg font-sans font-bold text-slate-700 dark:text-gray-200">{floors.find(f => f.id === selectedRoom!.floor)?.label || 'N/A'}</span>
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                                <button 
-                                                    onClick={() => {
-                                                        const currentIdx = floors.findIndex(f => f.id === selectedRoom!.floor);
-                                                        if (currentIdx < floors.length - 1) {
-                                                            updateRoom(selectedRoom!.id, { floor: floors[currentIdx + 1].id });
+                                                <div className="pt-6 border-t border-slate-100 dark:border-dark-border mt-auto">
+                                                    <button onClick={() => {
+                                                        if (isMultiSelection) {
+                                                            selectedRoomIds.forEach(id => deleteRoom(id));
+                                                            setSelectedRoomIds(new Set());
+                                                        } else {
+                                                            deleteRoom(selectedRoom!.id);
                                                         }
-                                                    }}
-                                                    disabled={floors.findIndex(f => f.id === selectedRoom!.floor) >= floors.length - 1}
-                                                    className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400 hover:text-orange-600 disabled:opacity-30 transition-colors"
-                                                    title="Move Up"
-                                                >
-                                                    <ChevronUp size={14} />
-                                                </button>
-                                                <button 
-                                                    onClick={() => {
-                                                        const currentIdx = floors.findIndex(f => f.id === selectedRoom!.floor);
-                                                        if (currentIdx > 0) {
-                                                            updateRoom(selectedRoom!.id, { floor: floors[currentIdx - 1].id });
-                                                        }
-                                                    }}
-                                                    disabled={floors.findIndex(f => f.id === selectedRoom!.floor) <= 0}
-                                                    className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400 hover:text-orange-600 disabled:opacity-30 transition-colors"
-                                                    title="Move Down"
-                                                >
-                                                    <ChevronDown size={14} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-3 block">Zone Category</label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {Object.keys(zoneColors).map(z => (
-                                                <button
-                                                    key={z}
-                                                        onClick={() => updateRoom(selectedRoom!.id, { zone: z })}
-                                                        className={`px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${selectedRoom!.zone === z ? 'bg-orange-600 border-orange-600 text-white' : 'bg-white dark:bg-white/5 border-slate-100 dark:border-white/10 text-slate-500 dark:text-gray-400 hover:border-slate-300 dark:hover:border-white/20'}`}
-                                                >
-                                                    {z}
-                                                </button>
-                                            ))}
-                                            <button
-                                                onClick={() => {
-                                                    const name = prompt("Enter new zone name:");
-                                                    if (name) handleAddZone(name);
-                                                }}
-                                                className="px-3 py-2 rounded-lg text-[10px] font-bold border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 transition-all flex items-center justify-center gap-1"
-                                            >
-                                                <Plus size={12} /> New
-                                            </button>
-                                        </div>
-                                    </div>
-                                        </>
-                                    ) : (
-                                        // Multi-selection Summary
-                                        <div className="space-y-4">
-                                            <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase">Total Area</span>
-                                                </div>
-                                                <div className="text-2xl font-sans font-bold text-slate-800 dark:text-gray-100 tracking-tight">
-                                                    {multiSelectionStats?.totalArea.toFixed(1)} <span className="text-sm font-sans text-slate-400 dark:text-gray-500 font-bold">m²</span>
+                                                    }} className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2">
+                                                        <Trash2 size={16} /> Delete Space
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <div className="p-4 bg-white dark:bg-dark-bg border border-slate-100 dark:border-dark-border rounded-xl">
-                                                <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase block mb-2">Breakdown</span>
-                                                <p className="text-xs font-medium text-slate-600 dark:text-gray-300">{multiSelectionStats?.breakdown}</p>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="pt-6 border-t border-slate-100 dark:border-dark-border mt-auto">
-                                        <button onClick={() => {
-                                            if (isMultiSelection) {
-                                                selectedRoomIds.forEach(id => deleteRoom(id));
-                                                setSelectedRoomIds(new Set());
-                                            } else {
-                                                deleteRoom(selectedRoom!.id);
-                                            }
-                                        }} className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2">
-                                            <Trash2 size={16} /> Delete Space
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : selectedZone ? (
-                                <div className="space-y-6 slide-in-bottom">
-                                    <div>
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Zone Name</label>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                className="w-full text-xl font-black text-slate-800 dark:text-gray-100 focus:outline-none focus:text-orange-600 transition-colors bg-transparent border-b border-dashed border-slate-300 dark:border-dark-border focus:border-orange-500 pb-1"
-                                                value={selectedZone}
-                                                onChange={(e) => renameZone(selectedZone, e.target.value)}
-                                            />
-                                            <div className={`w-4 h-4 rounded-full ${zoneColors[selectedZone]?.bg || 'bg-slate-200'}`} />
-                                        </div>
-                                    </div>
-
-                                    <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase">Total Stats</span>
-                                            <span className="text-[10px] font-bold text-orange-600 bg-orange-500/10 px-2 py-1 rounded-md">{selectedZoneRooms.length} Spaces</span>
-                                        </div>
-                                        <div className="text-3xl font-sans font-bold text-slate-800 dark:text-gray-100 tracking-tight">
-                                            {zoneArea} <span className="text-sm font-sans text-slate-400 dark:text-gray-500 font-bold">m²</span>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-3 block flex justify-between">
-                                            Included Spaces
-                                        </label>
-                                        <div className="space-y-2">
-                                            {selectedZoneRooms.map(r => (
-                                                <div key={r.id} className="flex items-center justify-between p-3 bg-white dark:bg-dark-bg border border-slate-100 dark:border-dark-border rounded-xl hover:shadow-md hover:border-orange-300 dark:hover:border-orange-800 transition-all cursor-pointer group"
-                                                    onClick={() => setSelectedRoomIds(new Set([r.id]))}>
-                                                    <span className="text-sm font-bold text-slate-700 dark:text-gray-300 group-hover:text-orange-600">{r.name}</span>
-                                                    <span className="text-[10px] font-sans text-slate-400 dark:text-gray-500">{r.area} m²</span>
+                                        ) : selectedZone ? (
+                                            <div className="space-y-6 slide-in-bottom">
+                                                <div>
+                                                    <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 block">Zone Name</label>
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            className="w-full text-xl font-black text-slate-800 dark:text-gray-100 focus:outline-none focus:text-orange-600 transition-colors bg-transparent border-b border-dashed border-slate-300 dark:border-dark-border focus:border-orange-500 pb-1"
+                                                            value={selectedZone}
+                                                            onChange={(e) => renameZone(selectedZone, e.target.value)}
+                                                        />
+                                                        <div className={`w-4 h-4 rounded-full ${zoneColors[selectedZone]?.bg || 'bg-slate-200'}`} />
+                                                    </div>
                                                 </div>
-                                            ))}
-                                        </div>
+
+                                                <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border">
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase">Total Stats</span>
+                                                        <span className="text-[10px] font-bold text-orange-600 bg-orange-500/10 px-2 py-1 rounded-md">{selectedZoneRooms.length} Spaces</span>
+                                                    </div>
+                                                    <div className="text-3xl font-sans font-bold text-slate-800 dark:text-gray-100 tracking-tight">
+                                                        {zoneArea} <span className="text-sm font-sans text-slate-400 dark:text-gray-500 font-bold">m²</span>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-3 block flex justify-between">
+                                                        Included Spaces
+                                                    </label>
+                                                    <div className="space-y-2">
+                                                        {selectedZoneRooms.map(r => (
+                                                            <div key={r.id} className="flex items-center justify-between p-3 bg-white dark:bg-dark-bg border border-slate-100 dark:border-dark-border rounded-xl hover:shadow-md hover:border-orange-300 dark:hover:border-orange-800 transition-all cursor-pointer group"
+                                                                onClick={() => setSelectedRoomIds(new Set([r.id]))}>
+                                                                <span className="text-sm font-bold text-slate-700 dark:text-gray-300 group-hover:text-orange-600">{r.name}</span>
+                                                                <span className="text-[10px] font-sans text-slate-400 dark:text-gray-500">{r.area} m²</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-24 opacity-30 px-10">
+                                                <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                                                    <Settings2 size={32} className="text-slate-400 dark:text-gray-500" />
+                                                </div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed text-slate-500 dark:text-gray-500">No Selection<br />Select an object to modify its geometry and metadata.</p>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
+                                </>
                             ) : (
-                                <div className="text-center py-20">
-                                    <Settings2 size={48} className="mx-auto text-slate-50 dark:text-white/5 mb-6" />
-                                    <p className="text-xs font-black text-slate-300 dark:text-gray-600 uppercase tracking-widest leading-relaxed px-10 text-center">Select an object to modify its geometry and metadata.</p>
+                                <div className="h-full flex flex-col items-center py-6 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 transition-colors" onClick={() => setIsRightSidebarOpen(true)}>
+                                    <div className="flex-1 flex items-center justify-center">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-gray-500 whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Properties</span>
+                                    </div>
+                                    <ChevronLeft size={18} className="text-slate-400 mb-4" />
                                 </div>
                             )}
-                        </div>
-                    </aside>
-                        )}
-
-                        {!isRightSidebarOpen && viewMode === 'CANVAS' && (
-                            <div className="absolute top-0 right-0 h-full flex items-center z-20 pointer-events-none">
-                                <button
-                                    onClick={() => setIsRightSidebarOpen(true)}
-                                    className="pointer-events-auto bg-white/70 dark:bg-dark-surface/70 backdrop-blur-sm py-4 px-1 rounded-l-lg border-l border-t border-b border-slate-200/50 dark:border-dark-border shadow-lg hover:bg-slate-50 dark:hover:bg-white/10 text-slate-400 hover:text-orange-600 transition-all"
-                                    title="Show Properties"
-                                >
-                                    <ChevronLeft size={18} />
-                                </button>
-                            </div>
-                        )}
+                        </aside>
                     </>
                 )}
             </div>

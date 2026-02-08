@@ -14,7 +14,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdate
     };
 
     return (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/20 z-[100] flex items-center justify-center p-4">
             <div className="bg-white dark:bg-dark-surface w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-white/20 slide-in-bottom">
                 <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center">
                     <h2 className="text-lg font-black text-slate-800 dark:text-gray-100">Workspace Settings</h2>

@@ -1,34 +1,54 @@
 import React from 'react';
-import { Lock, Unlock, Trash2, Scaling, X } from 'lucide-react';
+import { Lock, Unlock, Trash2, Scaling, X, Upload, Image as ImageIcon } from 'lucide-react';
 import { ReferenceImage } from '../types';
 
 interface ReferenceToolbarProps {
+    isReferenceMode: boolean;
     selectedImage: ReferenceImage | null;
     onUpdateImage: (id: string, updates: Partial<ReferenceImage>) => void;
     onDeleteImage: (id: string) => void;
+    onImportImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onStartScaling: (id: string) => void;
     isScalingMode: boolean;
     onCancelScaling: () => void;
 }
 
 export const ReferenceToolbar: React.FC<ReferenceToolbarProps> = ({
+    isReferenceMode,
     selectedImage,
     onUpdateImage,
     onDeleteImage,
+    onImportImage,
     onStartScaling,
     isScalingMode,
     onCancelScaling
 }) => {
-    if (!selectedImage && !isScalingMode) return null;
+    if (!isReferenceMode && !isScalingMode) return null;
 
     return (
         <div
-            className="flex flex-col gap-2 pointer-events-auto shrink-0"
+            className="flex flex-col gap-2 pointer-events-auto shrink-0 w-52"
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
         >
+            {/* Main Reference Controls */}
+            {!isScalingMode && (
+                <div className="bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md p-3 rounded-2xl border border-slate-200 dark:border-dark-border shadow-xl flex flex-col gap-3 animate-in slide-in-from-left-4 transition-all duration-300">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-border pb-2">
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-gray-400 flex items-center gap-2">
+                            <ImageIcon size={12} /> Reference Manager
+                        </h3>
+                    </div>
+                    
+                    <label className="w-full py-2 bg-slate-100 dark:bg-white/5 hover:bg-orange-50 dark:hover:bg-orange-900/20 border border-dashed border-slate-300 dark:border-dark-border hover:border-orange-300 dark:hover:border-orange-700 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-gray-400 hover:text-orange-600 cursor-pointer flex items-center justify-center gap-2 transition-all">
+                        <Upload size={14} /> Import Image
+                        <input type="file" accept="image/*" className="hidden" onChange={onImportImage} />
+                    </label>
+                </div>
+            )}
+
             {isScalingMode ? (
-                <div className="bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md p-2 rounded-2xl border border-slate-200 dark:border-dark-border shadow-xl flex flex-col gap-3 animate-in slide-in-from-right-4 transition-all duration-300">
+                <div className="bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md p-2 rounded-2xl border border-slate-200 dark:border-dark-border shadow-xl flex flex-col gap-3 animate-in slide-in-from-left-4 transition-all duration-300">
                     <div className="flex items-center justify-between px-1">
                         <h3 className="text-[10px] font-black uppercase tracking-widest text-orange-600">Scale by Reference</h3>
                         <button onClick={onCancelScaling} className="text-slate-400 hover:text-slate-600 dark:hover:text-gray-200">
@@ -40,7 +60,7 @@ export const ReferenceToolbar: React.FC<ReferenceToolbarProps> = ({
                     </p>
                 </div>
             ) : selectedImage && (
-                <div className="bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md p-2 rounded-2xl border border-slate-200 dark:border-dark-border shadow-xl flex flex-col gap-4 animate-in slide-in-from-right-4 transition-all duration-300 min-w-[200px]">
+                <div className="bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md p-2 rounded-2xl border border-slate-200 dark:border-dark-border shadow-xl flex flex-col gap-4 animate-in slide-in-from-left-4 transition-all duration-300">
                     <div className="flex items-center border-b border-slate-100 dark:border-dark-border pb-2 px-1">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 truncate max-w-[100px]">

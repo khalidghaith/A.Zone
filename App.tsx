@@ -111,6 +111,7 @@ export default function App() {
     // Sketch State
     const [annotations, setAnnotations] = useState<Annotation[]>(initialData?.annotations || []);
     const [isSketchMode, setIsSketchMode] = useState(false);
+    const [isReferenceMode, setIsReferenceMode] = useState(false);
     const [activeSketchType, setActiveSketchType] = useState<AnnotationType | 'eraser' | 'select'>('select');
     const [sketchProperties, setSketchProperties] = useState({
         stroke: '#f97316',
@@ -297,6 +298,20 @@ export default function App() {
         setFuture(newFuture);
     }, [future, rooms, connections, floors, zoneColors, projectName, annotations, referenceImages]);
 
+    // Clear selection when exiting reference mode
+    useEffect(() => {
+        if (!isReferenceMode) {
+            setSelectedReferenceImageId(null);
+        }
+    }, [isReferenceMode]);
+
+    // Clear selection when exiting sketch mode
+    useEffect(() => {
+        if (!isSketchMode) {
+            setSelectedAnnotationId(null);
+        }
+    }, [isSketchMode]);
+
     const handleResetProject = () => {
         if (window.confirm("Are you sure you want to reset the project? This will clear all data and cannot be undone.")) {
             localStorage.removeItem('SOAP_PROJECT_AUTOSAVE');
@@ -308,6 +323,8 @@ export default function App() {
             setZoneColors(ZONE_COLORS);
             setHistory([]);
             setFuture([]);
+            setAnnotations([]);
+            setReferenceImages([]);
         }
     };
 
@@ -989,24 +1006,31 @@ export default function App() {
         if (referenceScaleState.step === 'point1') {
             setReferenceScaleState({ ...referenceScaleState, points: [p], step: 'point2' });
         } else if (referenceScaleState.step === 'point2') {
-            const p1 = referenceScaleState.points[0];
-            const p2 = p;
-            const distPx = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+            // Add the second point immediately to show the line
+            const newPoints = [referenceScaleState.points[0], p];
+            setReferenceScaleState({ ...referenceScaleState, points: newPoints });
 
-            const input = window.prompt("Enter real-world distance between points (meters):");
-            if (input) {
-                const distMeters = parseFloat(input);
-                if (!isNaN(distMeters) && distMeters > 0) {
-                    const img = referenceImages.find(i => i.id === referenceScaleState.imageId);
-                    if (img) {
-                        const targetPx = distMeters * PIXELS_PER_METER;
-                        const newScale = (img.scale * targetPx) / distPx;
-                        addToHistory();
-                        handleUpdateReferenceImage(img.id, { scale: newScale });
+            // Delay the prompt slightly to allow React to render the line
+            setTimeout(() => {
+                const p1 = newPoints[0];
+                const p2 = newPoints[1];
+                const distPx = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+
+                const input = window.prompt("Enter real-world distance between points (meters):");
+                if (input) {
+                    const distMeters = parseFloat(input);
+                    if (!isNaN(distMeters) && distMeters > 0) {
+                        const img = referenceImages.find(i => i.id === referenceScaleState.imageId);
+                        if (img) {
+                            const targetPx = distMeters * PIXELS_PER_METER;
+                            const newScale = (img.scale * targetPx) / distPx;
+                            addToHistory();
+                            handleUpdateReferenceImage(img.id, { scale: newScale });
+                        }
                     }
                 }
-            }
-            setReferenceScaleState(null);
+                setReferenceScaleState(null);
+            }, 50);
         }
     };
 
@@ -1278,7 +1302,6 @@ export default function App() {
                     </div>
                 </div>
 
-
                 <div className="flex items-center gap-1.5">
                     <button
                         onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 group"
@@ -1291,12 +1314,6 @@ export default function App() {
                             <Download size={14} className="group-hover:-translate-y-0.5" /> Project
                             <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
                         </label>
-                        {viewMode === 'CANVAS' && (
-                            <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 cursor-pointer group">
-                                <FileImage size={14} className="group-hover:-translate-y-0.5" /> Site
-                                <input type="file" accept="image/*" className="hidden" onChange={handleImportReference} />
-                            </label>
-                        )}
                     </div>
                 </div>
             </header>
@@ -1418,10 +1435,10 @@ export default function App() {
                                 className="absolute inset-0 origin-top-left"
                                 style={{
                                     transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-                                    pointerEvents: !!referenceScaleState || !!selectedReferenceImageId ? 'all' : 'none'
+                                    pointerEvents: isReferenceMode ? 'all' : 'none'
                                 }}
                             >
-                                <svg className="absolute inset-0 overflow-visible" style={{ pointerEvents: 'all' }}>
+                                <svg className="absolute inset-0 overflow-visible" style={{ pointerEvents: 'none' }}>
                                     <ReferenceLayer
                                         images={referenceImages}
                                         currentFloor={currentFloor}
@@ -1434,13 +1451,14 @@ export default function App() {
                                         scalingState={referenceScaleState}
                                         onScalingPointClick={handleScalingPointClick}
                                         toWorld={toWorld}
+                                        isReferenceMode={isReferenceMode}
                                     />
                                 </svg>
                             </div>
 
                             {/* Zone Overlay Layer - Behind everything */}
                             <div
-                                className="absolute inset-0 origin-top-left pointer-events-none"
+                                className={`absolute inset-0 origin-top-left pointer-events-none ${isReferenceMode ? '[&_*]:pointer-events-none' : ''}`}
                                 style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
                             >
                                 <ZoneOverlay
@@ -1564,7 +1582,7 @@ export default function App() {
                                             onDragStart={() => { setIsBubbleDragging(true); addToHistory(); }}
                                             isAnyDragging={isBubbleDragging}
                                             otherRooms={selectedRoomIds.has(room.id) ? visibleRooms.filter(r => r.id !== room.id) : undefined}
-                                            isSketchMode={isSketchMode}
+                                            isSketchMode={isSketchMode || isReferenceMode}
                                         />
                                     ));
                                 })()}
@@ -1631,9 +1649,25 @@ export default function App() {
                                         <Atom size={16} className={isMagnetMode ? "animate-spin" : ""} />
                                     </button>
 
+                                    <button
+                                        onClick={() => {
+                                            const newValue = !isReferenceMode;
+                                            setIsReferenceMode(newValue);
+                                            if (newValue) setIsSketchMode(false);
+                                        }}
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${isReferenceMode ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-orange-600'}`}
+                                        title="Edit Reference Images"
+                                    >
+                                        <ImageIcon size={16} />
+                                    </button>
+
                                     <SketchToolbar
                                         isActive={isSketchMode}
-                                        onToggle={() => setIsSketchMode(!isSketchMode)}
+                                        onToggle={() => {
+                                            const newValue = !isSketchMode;
+                                            setIsSketchMode(newValue);
+                                            if (newValue) setIsReferenceMode(false);
+                                        }}
                                         activeType={activeSketchType}
                                         onTypeChange={setActiveSketchType}
                                         properties={selectedAnnotation ? selectedAnnotation.style : sketchProperties}
@@ -1653,6 +1687,20 @@ export default function App() {
                                 </div>
                             </div>
 
+                            {/* Reference Panel - Moved to Top Left (Below Toolbar) */}
+                            <div className="absolute top-20 left-6 z-[190]">
+                                <ReferenceToolbar
+                                    isReferenceMode={isReferenceMode}
+                                    selectedImage={referenceImages.find(i => i.id === selectedReferenceImageId) || null}
+                                    onUpdateImage={handleUpdateReferenceImage}
+                                    onDeleteImage={handleDeleteReferenceImage}
+                                    onImportImage={handleImportReference}
+                                    onStartScaling={(id) => setReferenceScaleState({ imageId: id, points: [], step: 'point1' })}
+                                    isScalingMode={!!referenceScaleState}
+                                    onCancelScaling={() => setReferenceScaleState(null)}
+                                />
+                            </div>
+
                             <div className="absolute top-6 right-6 flex flex-col items-end gap-2 z-[200]">
                                 <div className="h-12 bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md px-4 rounded-full border border-slate-200 dark:border-dark-border shadow-xl flex items-center gap-4 animate-in slide-in-from-right-4 transition-all duration-300">
                                     <div className="flex items-center gap-2 text-slate-400">
@@ -1669,15 +1717,6 @@ export default function App() {
                                         </button>
                                     </div>
                                 </div>
-
-                                <ReferenceToolbar
-                                    selectedImage={referenceImages.find(i => i.id === selectedReferenceImageId) || null}
-                                    onUpdateImage={handleUpdateReferenceImage}
-                                    onDeleteImage={handleDeleteReferenceImage}
-                                    onStartScaling={(id) => setReferenceScaleState({ imageId: id, points: [], step: 'point1' })}
-                                    isScalingMode={!!referenceScaleState}
-                                    onCancelScaling={() => setReferenceScaleState(null)}
-                                />
                             </div>
 
                             {/* Scale Bar on Canvas - Dynamic */}

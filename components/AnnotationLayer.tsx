@@ -25,8 +25,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     const [handles, setHandles] = useState<Point[]>([]);
     const [tempPoint, setTempPoint] = useState<Point | null>(null);
     const [step, setStep] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
     const isDrawing = useRef(false);
-    
+
     // Bezier Pen Tool State
     const [activeNodeIdx, setActiveNodeIdx] = useState<number | null>(null);
     const [dragHandleType, setDragHandleType] = useState<'anchor' | 'in' | 'out' | null>(null);
@@ -41,7 +42,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     const [textInputValue, setTextInputValue] = useState("");
     const [textInputPos, setTextInputPos] = useState<Point | null>(null);
     const textInputRef = useRef<HTMLTextAreaElement>(null);
-    
+
     // Ref to track editing ID synchronously to avoid race conditions between onBlur and onMouseDown
     const editingIdRef = useRef<string | null>(null);
     // Sync ref with state
@@ -63,6 +64,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         setHandles([]);
         setTempPoint(null);
         setStep(0);
+        setIsDragging(false);
         isDrawing.current = false;
         setActiveNodeIdx(null);
         setDragHandleType(null);
@@ -97,7 +99,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (!isSketchMode) return;
-        
+
         // Eraser logic is handled by onClick on individual annotations.
         // We just prevent default to stop canvas panning and return.
         if (activeType === 'eraser') {
@@ -113,7 +115,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         e.stopPropagation();
         e.preventDefault();
         mouseDownTimestamp.current = Date.now();
-        
+
         const point = toWorld(e.clientX, e.clientY);
 
         // --- Select Tool Logic (Canvas Click) ---
@@ -135,13 +137,13 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 commitText();
                 return;
             }
-            
+
             // Start new text
             setEditingTextId('new');
             setTextInputPos(point);
             setTextInputValue("");
             isDrawing.current = false;
-            
+
             // Focus next tick
             setTimeout(() => textInputRef.current?.focus(), 10);
             return;
@@ -286,7 +288,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 x: point.x - currentPos.x,
                 y: point.y - currentPos.y
             };
-            
+
             dragStartPos.current = point;
 
             const selectedAnn = annotations.find(a => a.id === selectedAnnotationId);
@@ -306,12 +308,12 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             if (selectedAnn) {
                 let newPoints = [...selectedAnn.points];
                 if (selectedAnn.type === 'bezier') {
-                     if (dragHandleType === 'anchor') {
-                         const delta = { x: point.x - newPoints[activeNodeIdx].x, y: point.y - newPoints[activeNodeIdx].y };
-                         newPoints = PenTool.moveNode(newPoints, activeNodeIdx, delta);
-                     } else if (dragHandleType) {
-                         newPoints = PenTool.updateHandle(newPoints, activeNodeIdx, dragHandleType, point, e.altKey);
-                     }
+                    if (dragHandleType === 'anchor') {
+                        const delta = { x: point.x - newPoints[activeNodeIdx].x, y: point.y - newPoints[activeNodeIdx].y };
+                        newPoints = PenTool.moveNode(newPoints, activeNodeIdx, delta);
+                    } else if (dragHandleType) {
+                        newPoints = PenTool.updateHandle(newPoints, activeNodeIdx, dragHandleType, point, e.altKey);
+                    }
                 } else {
                     // Polyline/Line/Arc - just move the point
                     newPoints[activeNodeIdx] = point;
@@ -338,7 +340,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                     }
 
                     let newPoints = [...points];
-                    
+
                     if (dragHandleType === 'anchor') {
                         // Move anchor (and handles)
                         const currentAnchor = points[activeNodeIdx];
@@ -374,6 +376,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             setActiveNodeIdx(null);
             setDragHandleType(null);
             isDraggingAnnotation.current = false;
+            setIsDragging(false);
             dragStartPos.current = null;
             return;
         }
@@ -397,7 +400,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             const finalPoints = [points[0], point];
             // Prevent zero-length creation
             const dist = Math.sqrt(Math.pow(finalPoints[1].x - finalPoints[0].x, 2) + Math.pow(finalPoints[1].y - finalPoints[0].y, 2));
-            
+
             if (dist > 1) {
                 onAddAnnotation({
                     id: `ann-${Date.now()}`,
@@ -452,10 +455,10 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     const commitText = () => {
         const currentEditingId = editingIdRef.current;
         if (!currentEditingId || !textInputPos) return;
-        
+
         // Clear ref immediately to prevent double commits
         editingIdRef.current = null;
-        
+
         if (textInputValue.trim()) {
             if (currentEditingId === 'new') {
                 onAddAnnotation({
@@ -467,8 +470,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 });
             } else {
                 onInteractionStart?.();
-                onUpdateAnnotation?.(currentEditingId, { 
-                    style: { ...properties, text: textInputValue } 
+                onUpdateAnnotation?.(currentEditingId, {
+                    style: { ...properties, text: textInputValue }
                 });
             }
         } else if (currentEditingId !== 'new') {
@@ -505,9 +508,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     // Helper to generate preview path
     const getPreviewPath = () => {
         if (points.length === 0 && !tempPoint) return '';
-        
+
         const previewPoints = tempPoint ? [...points, tempPoint] : points;
-        
+
         // Special case for Bezier Preview
         if (activeType === 'bezier') {
             let pathStr = '';
@@ -520,7 +523,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                     style: properties
                 });
             }
-            
+
             if (points.length > 0 && tempPoint) {
                 const lastAnchor = points[points.length - 3];
                 // If pathStr is empty (single node), start it, otherwise append
@@ -539,9 +542,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     };
 
     return (
-        <div 
+        <div
             ref={containerRef}
-            className="w-full h-full" 
+            className="w-full h-full"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -575,7 +578,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                         <rect x="1" y="1" width="6" height="6" fill="context-stroke" />
                     </marker>
                 </defs>
-                
+
                 <g transform={`translate(${offset.x}, ${offset.y}) scale(${scale})`}>
                     {/* Existing Annotations */}
                     {annotations.filter(a => a.floor === currentFloor).map(ann => {
@@ -590,11 +593,15 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                 onDeleteAnnotation?.(ann.id);
                             }
                         } : isSelect ? {
-                            style: { pointerEvents: 'all' as const, cursor: 'move' },
+                            style: {
+                                pointerEvents: 'all' as const,
+                                cursor: isDragging ? 'grabbing' : 'grab'
+                            },
                             onMouseDown: (e: React.MouseEvent) => {
                                 e.stopPropagation(); // Prevent canvas deselect
                                 onInteractionStart?.();
                                 isDraggingAnnotation.current = true;
+                                setIsDragging(true);
                                 dragStartPos.current = toWorld(e.clientX, e.clientY);
                                 onSelectAnnotation?.(ann.id);
                             },
@@ -620,10 +627,10 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                             if (editingTextId === ann.id) return null;
 
                             return (
-                                <text 
-                                    key={ann.id} 
-                                    x={ann.points[0].x} 
-                                    y={ann.points[0].y} 
+                                <text
+                                    key={ann.id}
+                                    x={ann.points[0].x}
+                                    y={ann.points[0].y}
                                     fill={ann.style.stroke}
                                     fontSize={ann.style.fontSize || 16}
                                     fontFamily={ann.style.fontFamily || "sans-serif"}
@@ -646,8 +653,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
 
                         if (isEraser || isSelect) {
                             return (
-                                <g 
-                                    key={ann.id} 
+                                <g
+                                    key={ann.id}
                                     className="group"
                                     {...interactionProps}
                                 >
@@ -713,18 +720,19 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                             return (
                                                 <React.Fragment key={i}>
                                                     {/* Lines to Handles */}
-                                                    <line x1={p.x} y1={p.y} x2={handleIn.x} y2={handleIn.y} stroke="#3b82f6" strokeWidth={1/scale} />
-                                                    <line x1={p.x} y1={p.y} x2={handleOut.x} y2={handleOut.y} stroke="#3b82f6" strokeWidth={1/scale} />
-                                                    
+                                                    <line x1={p.x} y1={p.y} x2={handleIn.x} y2={handleIn.y} stroke="#3b82f6" strokeWidth={1 / scale} />
+                                                    <line x1={p.x} y1={p.y} x2={handleOut.x} y2={handleOut.y} stroke="#3b82f6" strokeWidth={1 / scale} />
+
                                                     {/* Anchor Point */}
-                                                    <rect 
-                                                        x={p.x - 4/scale} y={p.y - 4/scale} width={8/scale} height={8/scale} 
-                                                        fill="#fff" stroke="#3b82f6" strokeWidth={1/scale}
-                                                        className="cursor-move"
+                                                    <rect
+                                                        x={p.x - 4 / scale} y={p.y - 4 / scale} width={8 / scale} height={8 / scale}
+                                                        fill="#fff" stroke="#3b82f6" strokeWidth={1 / scale}
+                                                        style={{ cursor: isDragging && dragHandleType === 'anchor' && activeNodeIdx === i ? 'grabbing' : 'move' }}
                                                         onMouseDown={(e) => {
                                                             e.stopPropagation();
                                                             onInteractionStart?.();
                                                             isDrawing.current = true;
+                                                            setIsDragging(true);
                                                             setActiveNodeIdx(i);
                                                             setDragHandleType('anchor');
                                                         }}
@@ -734,26 +742,30 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                                             handleRemovePoint(ann.id, i);
                                                         }}
                                                     />
-                                                    
+
                                                     {/* Handle Points */}
-                                                    <circle 
-                                                        cx={handleIn.x} cy={handleIn.y} r={3/scale} 
-                                                        fill="#3b82f6" className="cursor-move"
+                                                    <circle
+                                                        cx={handleIn.x} cy={handleIn.y} r={3 / scale}
+                                                        fill="#3b82f6"
+                                                        style={{ cursor: isDragging && dragHandleType === 'in' && activeNodeIdx === i ? 'grabbing' : 'crosshair' }}
                                                         onMouseDown={(e) => {
                                                             e.stopPropagation();
                                                             onInteractionStart?.();
                                                             isDrawing.current = true;
+                                                            setIsDragging(true);
                                                             setActiveNodeIdx(i);
                                                             setDragHandleType('in');
                                                         }}
                                                     />
-                                                    <circle 
-                                                        cx={handleOut.x} cy={handleOut.y} r={3/scale} 
-                                                        fill="#3b82f6" className="cursor-move"
+                                                    <circle
+                                                        cx={handleOut.x} cy={handleOut.y} r={3 / scale}
+                                                        fill="#3b82f6"
+                                                        style={{ cursor: isDragging && dragHandleType === 'out' && activeNodeIdx === i ? 'grabbing' : 'crosshair' }}
                                                         onMouseDown={(e) => {
                                                             e.stopPropagation();
                                                             onInteractionStart?.();
                                                             isDrawing.current = true;
+                                                            setIsDragging(true);
                                                             setActiveNodeIdx(i);
                                                             setDragHandleType('out');
                                                         }}
@@ -766,15 +778,16 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                 ) : (
                                     // Standard Points (Polyline, Line, Arc)
                                     ann.points.map((p, i) => (
-                                        <rect 
+                                        <rect
                                             key={i}
-                                            x={p.x - 4/scale} y={p.y - 4/scale} width={8/scale} height={8/scale} 
-                                            fill="#fff" stroke="#3b82f6" strokeWidth={1/scale}
-                                            className="cursor-move"
+                                            x={p.x - 4 / scale} y={p.y - 4 / scale} width={8 / scale} height={8 / scale}
+                                            fill="#fff" stroke="#3b82f6" strokeWidth={1 / scale}
+                                            style={{ cursor: isDragging && dragHandleType === 'anchor' && activeNodeIdx === i ? 'grabbing' : 'move' }}
                                             onMouseDown={(e) => {
                                                 e.stopPropagation();
                                                 onInteractionStart?.();
                                                 isDrawing.current = true;
+                                                setIsDragging(true);
                                                 setActiveNodeIdx(i);
                                                 setDragHandleType('anchor'); // Reuse 'anchor' for generic point
                                             }}
@@ -805,7 +818,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                 markerStart={SketchManager.getMarkerUrl('start', properties.startCap)}
                                 markerEnd={SketchManager.getMarkerUrl('end', properties.endCap)}
                             />
-                            
+
                             {/* Visual Guides for Bezier Handles (Pen Tool) */}
                             {activeType === 'bezier' && (
                                 <g>
@@ -817,16 +830,16 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                             return (
                                                 <React.Fragment key={i}>
                                                     {/* Line to Handle In */}
-                                                    <line x1={p.x} y1={p.y} x2={handleIn.x} y2={handleIn.y} stroke="#3b82f6" strokeWidth={1/scale} />
+                                                    <line x1={p.x} y1={p.y} x2={handleIn.x} y2={handleIn.y} stroke="#3b82f6" strokeWidth={1 / scale} />
                                                     {/* Line to Handle Out */}
-                                                    <line x1={p.x} y1={p.y} x2={handleOut.x} y2={handleOut.y} stroke="#3b82f6" strokeWidth={1/scale} />
-                                                    
+                                                    <line x1={p.x} y1={p.y} x2={handleOut.x} y2={handleOut.y} stroke="#3b82f6" strokeWidth={1 / scale} />
+
                                                     {/* Anchor Point (Square) */}
-                                                    <rect x={p.x - 3/scale} y={p.y - 3/scale} width={6/scale} height={6/scale} fill="#fff" stroke="#3b82f6" strokeWidth={1/scale} />
-                                                    
+                                                    <rect x={p.x - 3 / scale} y={p.y - 3 / scale} width={6 / scale} height={6 / scale} fill="#fff" stroke="#3b82f6" strokeWidth={1 / scale} />
+
                                                     {/* Handle Points (Circles) */}
-                                                    <circle cx={handleIn.x} cy={handleIn.y} r={2.5/scale} fill="#3b82f6" />
-                                                    <circle cx={handleOut.x} cy={handleOut.y} r={2.5/scale} fill="#3b82f6" />
+                                                    <circle cx={handleIn.x} cy={handleIn.y} r={2.5 / scale} fill="#3b82f6" />
+                                                    <circle cx={handleOut.x} cy={handleOut.y} r={2.5 / scale} fill="#3b82f6" />
                                                 </React.Fragment>
                                             );
                                         }
@@ -836,7 +849,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                             )}
                             {/* Visual Guides for Arc Control Points */}
                             {(activeType === 'arc') && points.map((p, i) => (
-                                <circle key={`p-${i}`} cx={p.x} cy={p.y} r={4/scale} fill="red" opacity={0.5} />
+                                <circle key={`p-${i}`} cx={p.x} cy={p.y} r={4 / scale} fill="red" opacity={0.5} />
                             ))}
                         </g>
                     )}

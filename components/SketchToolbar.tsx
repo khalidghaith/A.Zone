@@ -16,7 +16,9 @@ import {
     SendToBack,
     Bold,
     Italic,
-    Underline
+    Underline,
+    Minus,
+    MoreHorizontal
 } from 'lucide-react';
 import { AnnotationType, ArrowCapType } from '../types';
 
@@ -62,8 +64,8 @@ export const SketchToolbar: React.FC<SketchToolbarProps> = ({
             <button
                 onClick={onToggle}
                 className={`w-8 h-8 rounded-full flex items-center justify-center ${isActive
-                        ? 'bg-orange-500 text-white shadow-lg'
-                        : 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-orange-600'
+                    ? 'bg-orange-500 text-white shadow-lg'
+                    : 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-orange-600'
                     }`}
                 title="Sketch & Annotate"
             >
@@ -192,36 +194,90 @@ export const SketchToolbar: React.FC<SketchToolbarProps> = ({
                                 </div>
                             </>
                         ) : (
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                    <span className="text-[10px] font-bold text-slate-500">Start Cap</span>
-                                    <select
-                                        value={properties.startCap}
-                                        onChange={(e) => onPropertyChange('startCap', e.target.value)}
-                                        className="w-full text-[10px] bg-slate-100 dark:bg-white/5 border-none rounded-lg p-1 text-slate-700 dark:text-gray-300 focus:ring-1 ring-orange-500 outline-none"
-                                    >
-                                        <option value="none">None</option>
-                                        <option value="arrow">Arrow</option>
-                                        <option value="open-arrow">Open Arrow</option>
-                                        <option value="circle">Circle</option>
-                                        <option value="square">Square</option>
-                                    </select>
+                            <>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1">
+                                        <span className="text-[10px] font-bold text-slate-500">Start Cap</span>
+                                        <select
+                                            value={properties.startCap}
+                                            onChange={(e) => onPropertyChange('startCap', e.target.value)}
+                                            className="w-full text-[10px] bg-slate-100 dark:bg-white/5 border-none rounded-lg p-1 text-slate-700 dark:text-gray-300 focus:ring-1 ring-orange-500 outline-none"
+                                        >
+                                            <option value="none">None</option>
+                                            <option value="arrow">Arrow</option>
+                                            <option value="open-arrow">Open Arrow</option>
+                                            <option value="circle">Circle</option>
+                                            <option value="square">Square</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <span className="text-[10px] font-bold text-slate-500">End Cap</span>
+                                        <select
+                                            value={properties.endCap}
+                                            onChange={(e) => onPropertyChange('endCap', e.target.value)}
+                                            className="w-full text-[10px] bg-slate-100 dark:bg-white/5 border-none rounded-lg p-1 text-slate-700 dark:text-gray-300 focus:ring-1 ring-orange-500 outline-none"
+                                        >
+                                            <option value="none">None</option>
+                                            <option value="arrow">Arrow</option>
+                                            <option value="open-arrow">Open Arrow</option>
+                                            <option value="circle">Circle</option>
+                                            <option value="square">Square</option>
+                                        </select>
+                                    </div>
                                 </div>
-                                <div className="space-y-1">
-                                    <span className="text-[10px] font-bold text-slate-500">End Cap</span>
-                                    <select
-                                        value={properties.endCap}
-                                        onChange={(e) => onPropertyChange('endCap', e.target.value)}
-                                        className="w-full text-[10px] bg-slate-100 dark:bg-white/5 border-none rounded-lg p-1 text-slate-700 dark:text-gray-300 focus:ring-1 ring-orange-500 outline-none"
-                                    >
-                                        <option value="none">None</option>
-                                        <option value="arrow">Arrow</option>
-                                        <option value="open-arrow">Open Arrow</option>
-                                        <option value="circle">Circle</option>
-                                        <option value="square">Square</option>
-                                    </select>
+
+                                <div className="space-y-3 pt-2">
+                                    <label className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest block">Stroke Style</label>
+
+                                    <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl gap-1">
+                                        <button
+                                            onClick={() => onPropertyChange('strokeDash', '')}
+                                            className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all ${!properties.strokeDash ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                                        >
+                                            <Minus size={14} /> Solid
+                                        </button>
+                                        <button
+                                            onClick={() => onPropertyChange('strokeDash', '5,5')}
+                                            className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all ${properties.strokeDash ? 'bg-white dark:bg-dark-surface shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                                        >
+                                            <div className="flex gap-0.5"><div className="w-1.5 h-0.5 bg-current rounded-full" /><div className="w-1.5 h-0.5 bg-current rounded-full" /></div> Dashed
+                                        </button>
+                                    </div>
+
+                                    {properties.strokeDash !== undefined && properties.strokeDash !== '' && (
+                                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                            <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
+                                                {[
+                                                    { label: 'Dash', value: '5,5' },
+                                                    { label: 'Dot', value: '2,2' },
+                                                    { label: 'Long', value: '10,5' },
+                                                    { label: 'Mixed', value: '10,5,2,5' }
+                                                ].map(preset => (
+                                                    <button
+                                                        key={preset.value}
+                                                        onClick={() => onPropertyChange('strokeDash', preset.value)}
+                                                        className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-wider border whitespace-nowrap transition-all ${properties.strokeDash === preset.value ? 'bg-orange-500 border-orange-500 text-white' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 hover:border-orange-400'}`}
+                                                    >
+                                                        {preset.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Custom Dash (e.g. 5,5)"
+                                                    value={properties.strokeDash}
+                                                    onChange={(e) => onPropertyChange('strokeDash', e.target.value)}
+                                                    className="w-full text-[10px] bg-slate-100 dark:bg-white/5 border-none rounded-lg py-1.5 px-2.5 text-slate-700 dark:text-gray-300 focus:ring-1 ring-orange-500 outline-none font-mono"
+                                                />
+                                                <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-30">
+                                                    <MoreHorizontal size={10} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            </div>
+                            </>
                         )}
 
                         {selectedAnnotation && (
@@ -248,8 +304,8 @@ const ToolButton = ({ active, onClick, icon, title }: { active: boolean, onClick
     <button
         onClick={onClick}
         className={`w-8 h-8 rounded-lg flex items-center justify-center ${active
-                ? 'bg-white dark:bg-dark-surface text-orange-600 shadow-sm'
-                : 'text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300'
+            ? 'bg-white dark:bg-dark-surface text-orange-600 shadow-sm'
+            : 'text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300'
             }`}
         title={title}
     >

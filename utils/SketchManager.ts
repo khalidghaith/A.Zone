@@ -1,4 +1,4 @@
-import { Annotation, Point } from './types';
+import { Annotation, Point } from '../types';
 
 export const SketchManager = {
     generatePath: (annotation: Annotation): string => {

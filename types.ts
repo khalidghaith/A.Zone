@@ -145,7 +145,7 @@ export interface AppSettings {
   snapWhileScaling: boolean;
 }
 
-export type AnnotationType = 'line' | 'polyline' | 'arc' | 'bezier' | 'text';
+export type AnnotationType = 'line' | 'polyline' | 'arc' | 'bezier' | 'text' | 'rect' | 'circle' | 'arrow';
 export type ArrowCapType = 'none' | 'arrow' | 'circle' | 'square';
 
 export interface Annotation {

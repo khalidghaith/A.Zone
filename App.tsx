@@ -13,11 +13,13 @@ import {
     Plus, Map as MapIcon, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
     TableProperties, Hexagon, Circle, Square,
     LandPlot, ChevronRight, ChevronLeft, Key, X, Settings, LayoutTemplate, Trash2, Lock, Unlock, BrushCleaning,
-    Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom
+    Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom, FileImage, Image as ImageIcon, Scaling
 } from 'lucide-react';
-import { Annotation, AnnotationType, ArrowCapType } from './types';
+import { Annotation, AnnotationType, ArrowCapType, ReferenceImage, ReferenceScaleState } from './types';
 import { SketchToolbar } from './components/SketchToolbar';
 import { AnnotationLayer } from './components/AnnotationLayer';
+import { ReferenceLayer } from './components/ReferenceLayer';
+import { ReferenceToolbar } from './components/ReferenceToolbar';
 
 // Shim process for libs that might expect it in Vite
 if (typeof window !== 'undefined' && !window.process) {
@@ -96,6 +98,9 @@ export default function App() {
     const [rooms, setRooms] = useState<Room[]>(initialData?.rooms || []);
     const [connections, setConnections] = useState<Connection[]>(initialData?.connections || []);
     const [zoneColors, setZoneColors] = useState<Record<string, ZoneColor>>(initialData?.zoneColors || ZONE_COLORS);
+    const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>(initialData?.referenceImages || []);
+    const [referenceScaleState, setReferenceScaleState] = useState<ReferenceScaleState | null>(null);
+    const [selectedReferenceImageId, setSelectedReferenceImageId] = useState<string | null>(null);
 
     // API Key State
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('SOAP_GEMINI_KEY') || import.meta.env.VITE_GEMINI_API_KEY || "");
@@ -145,6 +150,24 @@ export default function App() {
         offset: { x: window.innerWidth / 2, y: window.innerHeight / 2 }
     });
     const { scale, offset } = viewport;
+
+    const toWorld = useCallback((x: number, y: number) => {
+        if (!mainRef.current) return { x: 0, y: 0 };
+        const rect = mainRef.current.getBoundingClientRect();
+        return {
+            x: (x - rect.left - offset.x) / scale,
+            y: (y - rect.top - offset.y) / scale
+        };
+    }, [offset.x, offset.y, scale]);
+
+    const toScreen = useCallback((x: number, y: number) => {
+        if (!mainRef.current) return { x: 0, y: 0 };
+        const rect = mainRef.current.getBoundingClientRect();
+        return {
+            x: x * scale + offset.x + rect.left,
+            y: y * scale + offset.y + rect.top
+        };
+    }, [offset.x, offset.y, scale]);
     const [is3DMode, setIs3DMode] = useState(false);
     const [currentStyle, setCurrentStyle] = useState<DiagramStyle>(DIAGRAM_STYLES[0]);
     const [selectedRoomIds, setSelectedRoomIds] = useState<Set<string>>(new Set());
@@ -190,20 +213,26 @@ export default function App() {
         }
     }, [darkMode]);
 
-    // Auto-save
+    // Debounced Auto-save
     useEffect(() => {
-        const saveData = {
-            projectName,
-            rooms,
-            connections,
-            zoneColors,
-            appSettings,
-            floors,
-            currentFloor,
-            annotations
-        };
-        localStorage.setItem('SOAP_PROJECT_AUTOSAVE', JSON.stringify(saveData));
-    }, [projectName, rooms, connections, zoneColors, appSettings, floors, currentFloor, annotations]);
+        const timer = setTimeout(() => {
+            const saveData = {
+                projectName,
+                rooms,
+                connections,
+                zoneColors,
+                appSettings,
+                floors,
+                currentFloor,
+                annotations,
+                referenceImages
+            };
+            localStorage.setItem('SOAP_PROJECT_AUTOSAVE', JSON.stringify(saveData));
+            console.log("Project auto-saved (debounced)");
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [projectName, rooms, connections, zoneColors, appSettings, floors, currentFloor, annotations, referenceImages]);
 
     // --- History System ---
     const [history, setHistory] = useState<{
@@ -213,6 +242,7 @@ export default function App() {
         zoneColors: Record<string, ZoneColor>;
         projectName: string;
         annotations: Annotation[];
+        referenceImages: ReferenceImage[];
     }[]>([]);
     const [future, setFuture] = useState<{
         rooms: Room[];
@@ -221,23 +251,24 @@ export default function App() {
         zoneColors: Record<string, ZoneColor>;
         projectName: string;
         annotations: Annotation[];
+        referenceImages: ReferenceImage[];
     }[]>([]);
 
     const addToHistory = useCallback(() => {
         setHistory(prev => {
-            const newHistory = [...prev, { rooms, connections, floors, zoneColors, projectName, annotations }];
+            const newHistory = [...prev, { rooms, connections, floors, zoneColors, projectName, annotations, referenceImages }];
             if (newHistory.length > 50) newHistory.shift();
             return newHistory;
         });
         setFuture([]);
-    }, [rooms, connections, floors, zoneColors, projectName, annotations]);
+    }, [rooms, connections, floors, zoneColors, projectName, annotations, referenceImages]);
 
     const undo = useCallback(() => {
         if (history.length === 0) return;
         const previous = history[history.length - 1];
         const newHistory = history.slice(0, -1);
 
-        setFuture(prev => [{ rooms, connections, floors, zoneColors, projectName, annotations }, ...prev]);
+        setFuture(prev => [{ rooms, connections, floors, zoneColors, projectName, annotations, referenceImages }, ...prev]);
 
         setRooms(previous.rooms);
         setConnections(previous.connections);
@@ -245,15 +276,16 @@ export default function App() {
         setZoneColors(previous.zoneColors);
         setProjectName(previous.projectName);
         setAnnotations(previous.annotations || []);
+        setReferenceImages(previous.referenceImages || []);
         setHistory(newHistory);
-    }, [history, rooms, connections, floors, zoneColors, projectName, annotations]);
+    }, [history, rooms, connections, floors, zoneColors, projectName, annotations, referenceImages]);
 
     const redo = useCallback(() => {
         if (future.length === 0) return;
         const next = future[0];
         const newFuture = future.slice(1);
 
-        setHistory(prev => [...prev, { rooms, connections, floors, zoneColors, projectName, annotations }]);
+        setHistory(prev => [...prev, { rooms, connections, floors, zoneColors, projectName, annotations, referenceImages }]);
 
         setRooms(next.rooms);
         setConnections(next.connections);
@@ -261,8 +293,9 @@ export default function App() {
         setZoneColors(next.zoneColors);
         setProjectName(next.projectName);
         setAnnotations(next.annotations || []);
+        setReferenceImages(next.referenceImages || []);
         setFuture(newFuture);
-    }, [future, rooms, connections, floors, zoneColors, projectName, annotations]);
+    }, [future, rooms, connections, floors, zoneColors, projectName, annotations, referenceImages]);
 
     const handleResetProject = () => {
         if (window.confirm("Are you sure you want to reset the project? This will clear all data and cannot be undone.")) {
@@ -462,8 +495,8 @@ export default function App() {
         };
 
         const currentFloorRooms = rooms.filter(r => r.isPlaced && r.floor === currentFloor);
-        const currentFloorAnnotations = annotations.filter(a => 
-            a.floor === currentFloor && 
+        const currentFloorAnnotations = annotations.filter(a =>
+            a.floor === currentFloor &&
             a.points && a.points.length > 0 // Ensure annotation has points
         );
 
@@ -504,8 +537,8 @@ export default function App() {
 
         // If bounds are still infinite (e.g. empty points arrays), reset view
         if (minX === Infinity || minY === Infinity || maxX === -Infinity || maxY === -Infinity) {
-             setViewport({ scale: 1, offset: getCenter() });
-             return;
+            setViewport({ scale: 1, offset: getCenter() });
+            return;
         }
 
         const padding = 100;
@@ -529,11 +562,11 @@ export default function App() {
     // Resize Observer for Canvas
     useEffect(() => {
         if (!mainRef.current) return;
-        
+
         // Initialize prevRect
         const { width, height } = mainRef.current.getBoundingClientRect();
         prevMainRect.current = { width, height };
-        
+
         const resizeObserver = new ResizeObserver(() => {
             if (!mainRef.current || !prevMainRect.current) return;
             const { width: newW, height: newH } = mainRef.current.getBoundingClientRect();
@@ -782,6 +815,7 @@ export default function App() {
                     if (data.currentFloor !== undefined) setCurrentFloor(data.currentFloor);
                     if (data.zoneColors) setZoneColors(data.zoneColors);
                     if (data.appSettings) setAppSettings(data.appSettings);
+                    if (data.referenceImages) setReferenceImages(data.referenceImages);
 
                     setHasInitialZoomed(false);
                     setViewMode('CANVAS');
@@ -899,6 +933,81 @@ export default function App() {
             else newArr.unshift(item);
             return newArr;
         });
+    };
+
+    const handleImportReference = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Support Images
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const url = event.target?.result as string;
+                const img = new Image();
+                img.onload = () => {
+                    const newImage: ReferenceImage = {
+                        id: `ref-${Date.now()}`,
+                        url,
+                        name: file.name,
+                        x: 0,
+                        y: 0,
+                        width: img.width,
+                        height: img.height,
+                        scale: 1,
+                        rotation: 0,
+                        opacity: 0.5,
+                        isLocked: false,
+                        floor: currentFloor
+                    };
+                    addToHistory();
+                    setReferenceImages(prev => [...prev, newImage]);
+                };
+                img.src = url;
+            };
+            reader.readAsDataURL(file);
+        } else if (file.type === 'application/pdf') {
+            alert("PDF support coming soon! Please use PNG/JPG for now.");
+        }
+
+        e.target.value = '';
+    };
+
+    const handleUpdateReferenceImage = (id: string, updates: Partial<ReferenceImage>) => {
+        setReferenceImages(prev => prev.map(img => img.id === id ? { ...img, ...updates } : img));
+    };
+
+    const handleDeleteReferenceImage = (id: string) => {
+        addToHistory();
+        setReferenceImages(prev => prev.filter(img => img.id !== id));
+        if (selectedReferenceImageId === id) setSelectedReferenceImageId(null);
+    };
+
+    const handleScalingPointClick = (p: Point) => {
+        if (!referenceScaleState) return;
+
+        if (referenceScaleState.step === 'point1') {
+            setReferenceScaleState({ ...referenceScaleState, points: [p], step: 'point2' });
+        } else if (referenceScaleState.step === 'point2') {
+            const p1 = referenceScaleState.points[0];
+            const p2 = p;
+            const distPx = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+
+            const input = window.prompt("Enter real-world distance between points (meters):");
+            if (input) {
+                const distMeters = parseFloat(input);
+                if (!isNaN(distMeters) && distMeters > 0) {
+                    const img = referenceImages.find(i => i.id === referenceScaleState.imageId);
+                    if (img) {
+                        const targetPx = distMeters * PIXELS_PER_METER;
+                        const newScale = (img.scale * targetPx) / distPx;
+                        addToHistory();
+                        handleUpdateReferenceImage(img.id, { scale: newScale });
+                    }
+                }
+            }
+            setReferenceScaleState(null);
+        }
     };
 
     const deleteAnnotation = useCallback((id: string) => {
@@ -1169,29 +1278,25 @@ export default function App() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                    {/* Scale Bar (Header Version) */}
-                    {viewMode === 'CANVAS' && (
-                        <div className="flex items-center gap-2 text-slate-400">
-                            <div className="h-1 w-12 bg-slate-300 rounded-full relative">
-                                <div className="absolute -top-3 left-0 text-[9px] font-bold">0m</div>
-                                <div className="absolute -top-3 right-0 text-[9px] font-bold">{(16 / scale / PIXELS_PER_METER * 4).toFixed(1)}m</div>
-                            </div>
-                            <span className="text-[9px] font-black uppercase tracking-widest">Scale</span>
-                        </div>
-                    )}
 
-                    <div className="flex items-center gap-1.5">
-                        <button
-                            onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 group"
-                        >
-                            <Upload size={14} className="group-hover:-translate-y-0.5" /> Export
-                        </button>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 group"
+                    >
+                        <Upload size={14} className="group-hover:-translate-y-0.5" /> Export
+                    </button>
 
+                    <div className="flex items-center">
                         <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 cursor-pointer group">
-                            <Download size={14} className="group-hover:-translate-y-0.5" /> Import
+                            <Download size={14} className="group-hover:-translate-y-0.5" /> Project
                             <input type="file" accept={viewMode === 'EDITOR' ? ".json,.csv" : ".json"} className="hidden" onChange={handleImportProject} />
                         </label>
+                        {viewMode === 'CANVAS' && (
+                            <label className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 cursor-pointer group">
+                                <FileImage size={14} className="group-hover:-translate-y-0.5" /> Site
+                                <input type="file" accept="image/*" className="hidden" onChange={handleImportReference} />
+                            </label>
+                        )}
                     </div>
                 </div>
             </header>
@@ -1307,6 +1412,32 @@ export default function App() {
                             }}
                         >        {/* Reset selection if clicking background (unless panning) */}
                             {/* The onMouseDown handler above already handles this */}
+
+                            {/* Background Reference Images */}
+                            <div
+                                className="absolute inset-0 origin-top-left"
+                                style={{
+                                    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+                                    pointerEvents: !!referenceScaleState || !!selectedReferenceImageId ? 'all' : 'none'
+                                }}
+                            >
+                                <svg className="absolute inset-0 overflow-visible" style={{ pointerEvents: 'all' }}>
+                                    <ReferenceLayer
+                                        images={referenceImages}
+                                        currentFloor={currentFloor}
+                                        scale={scale}
+                                        offset={offset}
+                                        selectedImageId={selectedReferenceImageId}
+                                        onSelectImage={setSelectedReferenceImageId}
+                                        onUpdateImage={handleUpdateReferenceImage}
+                                        isScalingMode={!!referenceScaleState}
+                                        scalingState={referenceScaleState}
+                                        onScalingPointClick={handleScalingPointClick}
+                                        toWorld={toWorld}
+                                    />
+                                </svg>
+                            </div>
+
                             {/* Zone Overlay Layer - Behind everything */}
                             <div
                                 className="absolute inset-0 origin-top-left pointer-events-none"
@@ -1522,14 +1653,31 @@ export default function App() {
                                 </div>
                             </div>
 
-                            <div className="absolute top-6 right-6 flex flex-col gap-2 z-[200]">
-                                <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm px-2 py-2 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-2">
-                                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase pl-2">Zoom</span>
-                                    <span className="text-xs font-sans font-bold text-slate-700 dark:text-gray-300 w-10 text-center">{(scale * 100).toFixed(0)}%</span>
-                                    <button onClick={handleZoomToFit} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-600 dark:text-gray-300 hover:bg-orange-600 hover:text-white" title="Zoom to Fit">
-                                        <Maximize size={12} />
-                                    </button>
+                            <div className="absolute top-6 right-6 flex flex-col items-end gap-2 z-[200]">
+                                <div className="h-12 bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md px-4 rounded-full border border-slate-200 dark:border-dark-border shadow-xl flex items-center gap-4 animate-in slide-in-from-right-4 transition-all duration-300">
+                                    <div className="flex items-center gap-2 text-slate-400">
+                                        <div className="h-1 w-12 bg-slate-300/50 dark:bg-white/10 rounded-full relative">
+                                            <div className="absolute -top-3 left-0 text-[8px] font-bold">0m</div>
+                                            <div className="absolute -top-3 right-0 text-[8px] font-bold">{(16 / scale / PIXELS_PER_METER * 4).toFixed(1)}m</div>
+                                        </div>
+                                    </div>
+                                    <div className="h-4 w-px bg-slate-200 dark:bg-dark-border" />
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-sans font-black text-slate-700 dark:text-gray-300">{(scale * 100).toFixed(0)}%</span>
+                                        <button onClick={handleZoomToFit} className="w-6 h-6 rounded-full bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center justify-center hover:bg-orange-500 hover:text-white transition-all shadow-sm" title="Zoom to Fit">
+                                            <Maximize size={12} />
+                                        </button>
+                                    </div>
                                 </div>
+
+                                <ReferenceToolbar
+                                    selectedImage={referenceImages.find(i => i.id === selectedReferenceImageId) || null}
+                                    onUpdateImage={handleUpdateReferenceImage}
+                                    onDeleteImage={handleDeleteReferenceImage}
+                                    onStartScaling={(id) => setReferenceScaleState({ imageId: id, points: [], step: 'point1' })}
+                                    isScalingMode={!!referenceScaleState}
+                                    onCancelScaling={() => setReferenceScaleState(null)}
+                                />
                             </div>
 
                             {/* Scale Bar on Canvas - Dynamic */}
@@ -1873,50 +2021,56 @@ export default function App() {
                 )}
             </div>
 
-            {showApiKeyModal && (
-                <ApiKeyModal
-                    onSave={handleSaveApiKey}
-                    onClose={() => setShowApiKeyModal(false)}
-                    currentKey={apiKey}
-                />
-            )}
+            {
+                showApiKeyModal && (
+                    <ApiKeyModal
+                        onSave={handleSaveApiKey}
+                        onClose={() => setShowApiKeyModal(false)}
+                        currentKey={apiKey}
+                    />
+                )
+            }
 
-            {showExportModal && (
-                <ExportModal
-                    onClose={() => setShowExportModal(false)}
-                    viewMode={viewMode}
-                    onExport={(format) => {
-                        if (format === 'csv') {
-                            // CSV Export Logic
-                            const headers = "Name,Area,Zone,Floor\n";
-                            const csvContent = rooms.map(r => `${r.name},${r.area},${r.zone},${floors.find(f => f.id === r.floor)?.label || 'Unplaced'}`).join('\n');
-                            const blob = new Blob([headers + csvContent], { type: 'text/csv;charset=utf-8;' });
-                            const link = document.createElement("a");
-                            if (link.download !== undefined) {
-                                const url = URL.createObjectURL(blob);
-                                link.setAttribute("href", url);
-                                link.setAttribute("download", `${projectName}.csv`);
-                                link.style.visibility = 'hidden';
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
+            {
+                showExportModal && (
+                    <ExportModal
+                        onClose={() => setShowExportModal(false)}
+                        viewMode={viewMode}
+                        onExport={(format) => {
+                            if (format === 'csv') {
+                                // CSV Export Logic
+                                const headers = "Name,Area,Zone,Floor\n";
+                                const csvContent = rooms.map(r => `${r.name},${r.area},${r.zone},${floors.find(f => f.id === r.floor)?.label || 'Unplaced'}`).join('\n');
+                                const blob = new Blob([headers + csvContent], { type: 'text/csv;charset=utf-8;' });
+                                const link = document.createElement("a");
+                                if (link.download !== undefined) {
+                                    const url = URL.createObjectURL(blob);
+                                    link.setAttribute("href", url);
+                                    link.setAttribute("download", `${projectName}.csv`);
+                                    link.style.visibility = 'hidden';
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                }
+                                setShowExportModal(false);
+                                return;
                             }
+                            handleExport(format, projectName, rooms, connections, currentFloor, darkMode, zoneColors, floors, appSettings, annotations);
                             setShowExportModal(false);
-                            return;
-                        }
-                        handleExport(format, projectName, rooms, connections, currentFloor, darkMode, zoneColors, floors, appSettings, annotations);
-                        setShowExportModal(false);
-                    }}
-                />
-            )}
+                        }}
+                    />
+                )
+            }
 
-            {showSettingsModal && (
-                <SettingsModal
-                    settings={appSettings}
-                    onUpdate={setAppSettings}
-                    onClose={() => setShowSettingsModal(false)}
-                />
-            )}
-        </div>
+            {
+                showSettingsModal && (
+                    <SettingsModal
+                        settings={appSettings}
+                        onUpdate={setAppSettings}
+                        onClose={() => setShowSettingsModal(false)}
+                    />
+                )
+            }
+        </div >
     );
 }

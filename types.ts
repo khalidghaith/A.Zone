@@ -170,3 +170,24 @@ export interface Annotation {
   };
   handles?: Point[]; // for Bezier curves
 }
+
+export interface ReferenceImage {
+  id: string;
+  url: string; // Base64 or Blob URL
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+  isLocked: boolean;
+  floor: number;
+}
+
+export interface ReferenceScaleState {
+  imageId: string;
+  points: Point[];
+  step: 'point1' | 'point2' | 'input';
+}

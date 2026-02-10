@@ -10,7 +10,7 @@ import { applyMagneticPhysics } from './utils/physics'; // Newly added
 import { handleExport, getHexColorForZone, getHexBorderForZone } from './utils/exportSystem';
 import { arrangeRooms } from './utils/layout';
 import {
-    Plus, Map as MapIcon, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
+    Plus, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
     TableProperties, Hexagon, Circle, Square,
     LandPlot, ChevronRight, ChevronLeft, Key, X, Settings, LayoutTemplate, Trash2, Lock, Unlock, BrushCleaning,
     Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom, FileImage, Image as ImageIcon, Scaling
@@ -20,6 +20,7 @@ import { SketchToolbar } from './components/SketchToolbar';
 import { AnnotationLayer } from './components/AnnotationLayer';
 import { ReferenceLayer } from './components/ReferenceLayer';
 import { ReferenceToolbar } from './components/ReferenceToolbar';
+import SoapLogo from './lib/symbols/SOAP-Logo.svg';
 
 // Shim process for libs that might expect it in Vite
 if (typeof window !== 'undefined' && !window.process) {
@@ -1239,9 +1240,7 @@ export default function App() {
             <header className="h-12 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] relative transition-colors duration-300">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 group cursor-pointer">
-                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-orange-200/50 group-hover:scale-105">
-                            <MapIcon size={16} />
-                        </div>
+                        <img src={SoapLogo} className="w-8 h-8 rounded-lg shadow-lg shadow-orange-200/50 group-hover:scale-105" alt="SOAP" />
                         <div>
                             <input className="font-black text-slate-900 dark:text-gray-100 tracking-tight leading-none bg-transparent border-none focus:outline-none focus:ring-0 w-full p-0 text-sm" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
                             <p className="text-[9px] font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest">SOAP Project</p>

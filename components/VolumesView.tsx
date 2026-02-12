@@ -26,7 +26,8 @@ interface VolumesViewProps {
         viewType: 'perspective' | 'isometric';
         hasInitialZoomed: boolean;
     };
-    onViewStateChange: (updates: Partial<VolumesViewProps['viewState']>) => void;
+    onViewStateChange: (updates: Partial<VolumesViewProps['viewState']>, incrementVersion?: boolean) => void;
+    cameraVersion: number;
 }
 
 const FLOOR_GAP = 4; // spacing between floors in 3D units (2 meters)
@@ -345,8 +346,13 @@ function CameraController({ zoomTrigger, placedRooms, floors, onFitComplete }: {
         const maxDim = Math.max(boxSize.x, boxSize.y, boxSize.z, 1); // Ensure min size > 0
 
         const distance = maxDim * 2;
-        // Use a standard isometric-like angle (1, 1, 1) normalized
-        const offset = new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(distance);
+
+        // Preserve current orientation
+        const currentDir = new THREE.Vector3().subVectors(camera.position, (controls as any).target).normalize();
+        // Fallback to default orientation if current direction is invalid (e.g. zero length)
+        if (currentDir.lengthSq() < 0.0001) currentDir.set(1, -1, 1).normalize();
+
+        const offset = currentDir.multiplyScalar(distance);
         const newPos = center.clone().add(offset);
 
         camera.position.copy(newPos);
@@ -380,7 +386,7 @@ function CameraController({ zoomTrigger, placedRooms, floors, onFitComplete }: {
     return null;
 }
 
-function ViewStateTracker({ onUpdate }: { onUpdate: (pos: THREE.Vector3, target: THREE.Vector3, zoom: number) => void }) {
+function ViewStateTracker({ onUpdate, isInteracting }: { onUpdate: (pos: THREE.Vector3, target: THREE.Vector3, zoom: number) => void, isInteracting: React.MutableRefObject<boolean> }) {
     const { camera, controls } = useThree();
     const onUpdateRef = useRef(onUpdate);
     onUpdateRef.current = onUpdate;
@@ -389,33 +395,90 @@ function ViewStateTracker({ onUpdate }: { onUpdate: (pos: THREE.Vector3, target:
         const ctrl = controls as any;
         if (!ctrl) return;
 
+        const onStart = () => {
+            isInteracting.current = true;
+        };
+
         // Use 'end' event instead of 'change' to avoid re-rendering parent on every frame of drag
         const onEnd = () => {
+            isInteracting.current = false;
             onUpdateRef.current(camera.position, ctrl.target, camera.zoom);
         };
 
+        ctrl.addEventListener('start', onStart);
         ctrl.addEventListener('end', onEnd);
-        return () => ctrl.removeEventListener('end', onEnd);
-    }, [camera, controls]);
+        return () => {
+            ctrl.removeEventListener('start', onStart);
+            ctrl.removeEventListener('end', onEnd);
+        };
+    }, [camera, controls, isInteracting]);
 
     return null;
 }
 
-function CameraHandler({ viewState }: { viewState: VolumesViewProps['viewState'] }) {
-    const { camera, controls } = useThree();
+function CameraHandler({ viewState, onViewStateChange, isInteracting, cameraVersion }: {
+    viewState: VolumesViewProps['viewState'],
+    onViewStateChange: (updates: Partial<VolumesViewProps['viewState']>, incrementVersion?: boolean) => void,
+    isInteracting: React.MutableRefObject<boolean>,
+    cameraVersion: number
+}) {
+    const { camera, controls, size } = useThree();
+    const prevCameraVersion = useRef(cameraVersion);
+    const prevViewType = useRef(viewState.viewType);
 
+    // Effect for View Type Switching (Perspective/Isometric)
     useEffect(() => {
-        camera.up.set(0, 0, 1);
-        camera.position.set(...viewState.cameraPosition);
+        if (prevViewType.current !== viewState.viewType) {
+            const isIso = viewState.viewType === 'isometric';
+            const target = new THREE.Vector3(...viewState.target);
+            const currentPos = new THREE.Vector3(...viewState.cameraPosition);
+            const distance = currentPos.distanceTo(target);
 
-        const target = new THREE.Vector3(...viewState.target);
-        if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) {
-            target.set(0, 0, 0);
+            if (isIso) {
+                // Perspective -> Isometric
+                const fov = 45;
+                const visibleHeight = 2 * distance * Math.tan((fov * Math.PI) / 360);
+                const newZoom = size.height / visibleHeight;
+                (camera as THREE.OrthographicCamera).zoom = newZoom;
+                camera.updateProjectionMatrix();
+                // Update state with new zoom and increment version to force update
+                onViewStateChange({ zoom: newZoom }, true);
+            } else {
+                // Isometric -> Perspective
+                const currentZoom = viewState.zoom;
+                const visibleHeight = size.height / currentZoom;
+                const fov = 45;
+                const newDistance = visibleHeight / (2 * Math.tan((fov * Math.PI) / 360));
+                const direction = currentPos.sub(target).normalize();
+                const newPos = target.clone().add(direction.multiplyScalar(newDistance));
+                camera.position.copy(newPos);
+                camera.updateProjectionMatrix();
+                // Update state with new position and reset zoom, increment version
+                onViewStateChange({
+                    cameraPosition: [newPos.x, newPos.y, newPos.z],
+                    zoom: 1
+                }, true);
+            }
+            prevViewType.current = viewState.viewType;
         }
-        camera.lookAt(target);
+    }, [viewState.viewType, size, camera, onViewStateChange, viewState.target, viewState.cameraPosition, viewState.zoom]);
+
+
+    // Effect for Programmatic Camera Moves (Driven by cameraVersion)
+    useEffect(() => {
+        // Only update if the version has changed (indicating an external, intentional move)
+        // or if it's the very first mount (to set initial position)
+        if (cameraVersion === prevCameraVersion.current) return;
+
+        prevCameraVersion.current = cameraVersion;
+
+        const targetPos = new THREE.Vector3(...viewState.cameraPosition);
+        const targetTarget = new THREE.Vector3(...viewState.target);
+
+        camera.up.set(0, 0, 1);
+        camera.position.copy(targetPos);
 
         if (camera.type === 'OrthographicCamera') {
-            // Sanitize zoom value from state
             let safeZoom = viewState.zoom;
             if (!Number.isFinite(safeZoom) || safeZoom <= 0) safeZoom = 1;
             (camera as THREE.OrthographicCamera).zoom = safeZoom;
@@ -423,22 +486,26 @@ function CameraHandler({ viewState }: { viewState: VolumesViewProps['viewState']
         }
 
         if (controls) {
-            (controls as any).target.copy(target);
+            (controls as any).target.copy(targetTarget);
             (controls as any).update();
         }
-    }, [viewState.viewType, camera, controls]);
+
+    }, [cameraVersion, viewState.cameraPosition, viewState.target, viewState.zoom, camera, controls]);
 
     return null;
 }
+
+
 
 export function VolumesView({
     rooms, floors, verticalConnections, zoneColors, pixelsPerMeter,
     connectionSourceId, onLinkToggle, appSettings, diagramStyle,
     selectedRoomIds, onRoomSelect, darkMode, gridSize,
-    viewState, onViewStateChange
+    viewState, onViewStateChange, cameraVersion
 }: VolumesViewProps) {
     const [zoomToFitTrigger, setZoomToFitTrigger] = useState(0);
     const placedRooms = useMemo(() => rooms.filter(r => r.isPlaced), [rooms]);
+    const isInteracting = useRef(false);
 
     // Track camera state in ref to avoid re-renders, save on unmount
     const cameraStateRef = useRef({
@@ -481,7 +548,7 @@ export function VolumesView({
             cameraPosition: [pos.x, pos.y, pos.z],
             target: [target.x, target.y, target.z],
             zoom: zoom
-        });
+        }, true);
     }, [onViewStateChange]);
 
     const handleCameraUpdate = (pos: THREE.Vector3, target: THREE.Vector3, zoom: number) => {
@@ -513,8 +580,7 @@ export function VolumesView({
             viewType: type,
             cameraPosition: [cameraStateRef.current.pos.x, cameraStateRef.current.pos.y, cameraStateRef.current.pos.z],
             target: [cameraStateRef.current.target.x, cameraStateRef.current.target.y, cameraStateRef.current.target.z],
-            zoom: 1 // Reset zoom when switching views to prevent FOV issues
-        });
+        }, true);
     };
 
     return (
@@ -532,9 +598,9 @@ export function VolumesView({
                     <OrthographicCamera makeDefault near={0.1} far={2000} up={[0, 0, 1]} />
                 )}
                 <OrbitControls key={viewState.viewType} makeDefault zoomToCursor enableDamping={false} />
-                <CameraHandler viewState={viewState} />
+                <CameraHandler viewState={viewState} onViewStateChange={onViewStateChange} isInteracting={isInteracting} cameraVersion={cameraVersion} />
                 <CameraController zoomTrigger={zoomToFitTrigger} placedRooms={placedRooms} floors={floors} onFitComplete={handleFitComplete} />
-                <ViewStateTracker onUpdate={handleCameraUpdate} />
+                <ViewStateTracker onUpdate={handleCameraUpdate} isInteracting={isInteracting} />
                 <ambientLight intensity={0.7} />
                 <pointLight position={[200, 200, 500]} intensity={1.5} castShadow />
                 <directionalLight position={[-200, -200, 400]} intensity={0.8} />

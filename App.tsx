@@ -183,16 +183,21 @@ export default function App() {
         viewType: 'perspective' | 'isometric';
         hasInitialZoomed: boolean;
     }>({
-        cameraPosition: [300, 300, 300],
+        cameraPosition: [300, -300, 300],
         target: [0, 0, 0],
         zoom: 1.5,
         viewType: 'perspective',
         hasInitialZoomed: false
     });
 
+    const [cameraVersion, setCameraVersion] = useState(0);
+
     // Extracted Handlers for Volumes View (to avoid conditional hook calls)
-    const handleViewStateChange = useCallback((updates: any) => {
+    const handleViewStateChange = useCallback((updates: any, incrementVersion = false) => {
         setVolumesViewState(prev => ({ ...prev, ...updates }));
+        if (incrementVersion) {
+            setCameraVersion(v => v + 1);
+        }
     }, []);
 
     const handleVolumeRoomSelect = useCallback((id: string | null, multi: boolean) => {
@@ -206,6 +211,8 @@ export default function App() {
             else next.add(id);
             return next;
         });
+        // Optional: Focus camera on room select?
+        // For now, let's not force move camera on select to avoid jarring jumps
     }, []);
 
     // Tools State
@@ -477,6 +484,15 @@ export default function App() {
     const prevMainRect = useRef<{ width: number, height: number } | null>(null);
     const lastMousePos = useRef<Point>({ x: 0, y: 0 });
 
+    // Touch State
+    const touchState = useRef<{
+        mode: 'none' | 'pan' | 'zoom';
+        startDist: number;
+        startScale: number;
+        startOffset: Point;
+        lastCenter: Point;
+    }>({ mode: 'none', startDist: 0, startScale: 1, startOffset: { x: 0, y: 0 }, lastCenter: { x: 0, y: 0 } });
+
     // Update offset on resize to keep center
     // Physics Loop
     useEffect(() => {
@@ -568,6 +584,101 @@ export default function App() {
             }));
             lastMousePos.current = { x: e.clientX, y: e.clientY };
         }
+    };
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (viewMode === 'VOLUMES') return;
+
+        if (e.touches.length === 1) {
+            // Single touch - Pan (if on background)
+            if (e.target === mainRef.current) {
+                setIsPanning(true);
+                lastMousePos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
+                // Clear selection if background
+                setSelectedRoomIds(new Set());
+                setSelectedZone(null);
+                if (connectionSourceId) setConnectionSourceId(null);
+            }
+        } else if (e.touches.length === 2) {
+            // Two touch - Zoom & Pan
+            setIsPanning(true);
+
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+
+            const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            const center = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+
+            touchState.current = {
+                mode: 'zoom',
+                startDist: dist,
+                startScale: scale,
+                startOffset: { ...offset },
+                lastCenter: center
+            };
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (viewMode === 'VOLUMES') return;
+
+        if (e.touches.length === 1 && isPanning) {
+            const dx = e.touches[0].clientX - lastMousePos.current.x;
+            const dy = e.touches[0].clientY - lastMousePos.current.y;
+            setViewport(prev => ({
+                ...prev,
+                offset: { x: prev.offset.x + dx, y: prev.offset.y + dy }
+            }));
+            lastMousePos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        } else if (e.touches.length === 2) {
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+
+            const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            const center = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+            const state = touchState.current;
+
+            if (state.mode !== 'zoom') return;
+
+            const rect = mainRef.current?.getBoundingClientRect();
+            if (!rect) return;
+
+            // Calculate Zoom
+            const scaleFactor = dist / state.startDist;
+            const newScale = Math.min(Math.max(0.1, state.startScale * scaleFactor), 5);
+
+            // Calculate Pan (movement of the center point)
+            const panX = center.x - state.lastCenter.x;
+            const panY = center.y - state.lastCenter.y;
+
+            setViewport(prev => {
+                // Apply Pan first
+                const intermediateOffset = { x: prev.offset.x + panX, y: prev.offset.y + panY };
+
+                // Apply Zoom around the center (relative to container)
+                const relCenterX = center.x - rect.left;
+                const relCenterY = center.y - rect.top;
+
+                // Formula: newOffset = center - (center - oldOffset) * (newScale / oldScale)
+                const zoomRatio = newScale / prev.scale;
+                const finalOffsetX = relCenterX - (relCenterX - intermediateOffset.x) * zoomRatio;
+                const finalOffsetY = relCenterY - (relCenterY - intermediateOffset.y) * zoomRatio;
+
+                return {
+                    scale: newScale,
+                    offset: { x: finalOffsetX, y: finalOffsetY }
+                };
+            });
+
+            touchState.current.lastCenter = center;
+        }
+    };
+
+    const handleTouchEnd = () => {
+        if (viewMode === 'VOLUMES') return;
+        setIsPanning(false);
+        touchState.current.mode = 'none';
     };
 
     const handleMouseUp = () => {
@@ -1491,9 +1602,13 @@ export default function App() {
                             onMouseDown={isSketchMode || viewMode === 'VOLUMES' ? undefined : handlePanStart}
                             onMouseMove={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleMouseMove}
                             onMouseUp={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleMouseUp}
+                            onTouchStart={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchStart}
+                            onTouchMove={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchMove}
+                            onTouchEnd={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchEnd}
                             onDragOver={viewMode === 'VOLUMES' ? undefined : handleDragOver}
                             onDrop={viewMode === 'VOLUMES' ? undefined : handleDrop}
                             style={{
+                                touchAction: 'none',
                                 cursor: viewMode === 'VOLUMES' ? 'default' : (isSketchMode ? 'crosshair' : (isPanning ? 'grabbing' : 'default')),
                                 ...(viewMode !== 'VOLUMES' && showGrid ? {
                                     backgroundImage: `
@@ -1531,6 +1646,7 @@ export default function App() {
                                         viewState={volumesViewState}
                                         onViewStateChange={handleViewStateChange}
                                         onRoomSelect={handleVolumeRoomSelect}
+                                        cameraVersion={cameraVersion}
                                     />
                                 </ErrorBoundary>
                             ) : (

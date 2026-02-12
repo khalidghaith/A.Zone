@@ -32,32 +32,64 @@ export const ReferenceLayer: React.FC<ReferenceLayerProps> = ({
     // Performance optimization: Local position during drag
     const [localDragPos, setLocalDragPos] = useState<Point | null>(null);
     const [cursorPos, setCursorPos] = useState<Point | null>(null);
+    const [localResizeState, setLocalResizeState] = useState<{ scale: number, x: number, y: number } | null>(null);
 
     // Synchronize refs for event listeners
     const isDraggingRef = useRef(false);
+    const isResizingRef = useRef(false);
     const selectedImageIdRef = useRef<string | null>(null);
     const dragStartPosRef = useRef<Point>({ x: 0, y: 0 });
     const imageStartPosRef = useRef<Point>({ x: 0, y: 0 });
     const localDragPosRef = useRef<Point | null>(null);
+    const localResizeStateRef = useRef<{ scale: number, x: number, y: number } | null>(null);
+
+    // Resize refs
+    const resizeStartDistRef = useRef<number>(0);
+    const resizeImageStartRef = useRef<{ x: number, y: number, width: number, height: number, scale: number } | null>(null);
+    const resizeCenterRef = useRef<Point>({ x: 0, y: 0 });
 
     useEffect(() => {
         selectedImageIdRef.current = selectedImageId;
         localDragPosRef.current = localDragPos;
-    }, [selectedImageId, localDragPos]);
+        localResizeStateRef.current = localResizeState;
+    }, [selectedImageId, localDragPos, localResizeState]);
 
     useEffect(() => {
         const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (!isDraggingRef.current || !selectedImageIdRef.current) return;
+            if (isDraggingRef.current && selectedImageIdRef.current) {
+                const worldPos = toWorld(e.clientX, e.clientY);
+                const dx = worldPos.x - dragStartPosRef.current.x;
+                const dy = worldPos.y - dragStartPosRef.current.y;
 
-            const worldPos = toWorld(e.clientX, e.clientY);
-            const dx = worldPos.x - dragStartPosRef.current.x;
-            const dy = worldPos.y - dragStartPosRef.current.y;
+                const nextPos = {
+                    x: imageStartPosRef.current.x + dx,
+                    y: imageStartPosRef.current.y + dy
+                };
+                setLocalDragPos(nextPos);
+            } else if (isResizingRef.current && selectedImageIdRef.current && resizeImageStartRef.current) {
+                const worldPos = toWorld(e.clientX, e.clientY);
+                const center = resizeCenterRef.current;
+                const dx = worldPos.x - center.x;
+                const dy = worldPos.y - center.y;
+                const currentDist = Math.sqrt(dx * dx + dy * dy);
 
-            const nextPos = {
-                x: imageStartPosRef.current.x + dx,
-                y: imageStartPosRef.current.y + dy
-            };
-            setLocalDragPos(nextPos);
+                if (resizeStartDistRef.current > 0) {
+                    const scaleFactor = currentDist / resizeStartDistRef.current;
+                    const startImg = resizeImageStartRef.current;
+                    const newScale = Math.max(0.01, startImg.scale * scaleFactor);
+
+                    // Calculate new position to keep center fixed
+                    const s = startImg.scale;
+                    const sPrime = newScale;
+                    const w = startImg.width;
+                    const h = startImg.height;
+
+                    const newX = startImg.x + (w / 2) * (s - sPrime);
+                    const newY = startImg.y + (h / 2) * (s - sPrime);
+
+                    setLocalResizeState({ scale: newScale, x: newX, y: newY });
+                }
+            }
         };
 
         const handleGlobalMouseUp = () => {
@@ -67,12 +99,21 @@ export const ReferenceLayer: React.FC<ReferenceLayerProps> = ({
                     y: localDragPosRef.current.y
                 });
             }
+            if (isResizingRef.current && selectedImageIdRef.current && localResizeStateRef.current) {
+                onUpdateImage(selectedImageIdRef.current, {
+                    scale: localResizeStateRef.current.scale,
+                    x: localResizeStateRef.current.x,
+                    y: localResizeStateRef.current.y
+                });
+            }
             isDraggingRef.current = false;
+            isResizingRef.current = false;
             setLocalDragPos(null);
+            setLocalResizeState(null);
             document.body.style.cursor = '';
         };
 
-        if (localDragPos !== null) {
+        if (localDragPos !== null || localResizeState !== null) {
             window.addEventListener('mousemove', handleGlobalMouseMove);
             window.addEventListener('mouseup', handleGlobalMouseUp);
         }
@@ -81,7 +122,7 @@ export const ReferenceLayer: React.FC<ReferenceLayerProps> = ({
             window.removeEventListener('mousemove', handleGlobalMouseMove);
             window.removeEventListener('mouseup', handleGlobalMouseUp);
         };
-    }, [localDragPos !== null, toWorld, onUpdateImage]);
+    }, [localDragPos !== null || localResizeState !== null, toWorld, onUpdateImage]);
 
     // Track cursor for scaling preview line
     useEffect(() => {
@@ -119,6 +160,28 @@ export const ReferenceLayer: React.FC<ReferenceLayerProps> = ({
         document.body.style.cursor = 'grabbing';
     };
 
+    const handleResizeStart = (e: React.MouseEvent, img: ReferenceImage) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (img.isLocked) return;
+
+        isResizingRef.current = true;
+        resizeImageStartRef.current = { ...img };
+
+        const displayWidth = img.width * img.scale;
+        const displayHeight = img.height * img.scale;
+        const centerX = img.x + displayWidth / 2;
+        const centerY = img.y + displayHeight / 2;
+        resizeCenterRef.current = { x: centerX, y: centerY };
+
+        const worldPos = toWorld(e.clientX, e.clientY);
+        const dx = worldPos.x - centerX;
+        const dy = worldPos.y - centerY;
+        resizeStartDistRef.current = Math.sqrt(dx * dx + dy * dy);
+
+        setLocalResizeState({ scale: img.scale, x: img.x, y: img.y });
+    };
+
     return (
         <g>
             {images.filter(img => img.floor === currentFloor).map(img => {
@@ -126,11 +189,14 @@ export const ReferenceLayer: React.FC<ReferenceLayerProps> = ({
 
                 // Use local drag position if currently dragging this image
                 const isCurrentlyDragging = isSelected && localDragPos !== null;
-                const displayX = isCurrentlyDragging ? localDragPos.x : img.x;
-                const displayY = isCurrentlyDragging ? localDragPos.y : img.y;
+                const isCurrentlyResizing = isSelected && localResizeState !== null;
 
-                const displayWidth = img.width * img.scale;
-                const displayHeight = img.height * img.scale;
+                const displayX = isCurrentlyDragging ? localDragPos!.x : (isCurrentlyResizing ? localResizeState!.x : img.x);
+                const displayY = isCurrentlyDragging ? localDragPos!.y : (isCurrentlyResizing ? localResizeState!.y : img.y);
+                const currentScale = isCurrentlyResizing ? localResizeState!.scale : img.scale;
+
+                const displayWidth = img.width * currentScale;
+                const displayHeight = img.height * currentScale;
 
                 return (
                     <g key={img.id} transform={`translate(${displayX}, ${displayY}) rotate(${img.rotation}, ${displayWidth / 2}, ${displayHeight / 2})`}>
@@ -147,16 +213,23 @@ export const ReferenceLayer: React.FC<ReferenceLayerProps> = ({
                         />
                         {/* Selection Highlight */}
                         {isSelected && !img.isLocked && (
-                            <rect
-                                x={-2 / scale}
-                                y={-2 / scale}
-                                width={displayWidth + 4 / scale}
-                                height={displayHeight + 4 / scale}
-                                fill="none"
-                                stroke="#f97316"
-                                strokeWidth={2 / scale}
-                                style={{ pointerEvents: 'none' }}
-                            />
+                            <>
+                                <rect
+                                    x={-2 / scale}
+                                    y={-2 / scale}
+                                    width={displayWidth + 4 / scale}
+                                    height={displayHeight + 4 / scale}
+                                    fill="none"
+                                    stroke="#f97316"
+                                    strokeWidth={2 / scale}
+                                    style={{ pointerEvents: 'none' }}
+                                />
+                                {/* Resize Handles */}
+                                <circle cx={0} cy={0} r={6 / scale} fill="white" stroke="#f97316" strokeWidth={2 / scale} style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} onMouseDown={(e) => handleResizeStart(e, img)} />
+                                <circle cx={displayWidth} cy={0} r={6 / scale} fill="white" stroke="#f97316" strokeWidth={2 / scale} style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} onMouseDown={(e) => handleResizeStart(e, img)} />
+                                <circle cx={0} cy={displayHeight} r={6 / scale} fill="white" stroke="#f97316" strokeWidth={2 / scale} style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} onMouseDown={(e) => handleResizeStart(e, img)} />
+                                <circle cx={displayWidth} cy={displayHeight} r={6 / scale} fill="white" stroke="#f97316" strokeWidth={2 / scale} style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} onMouseDown={(e) => handleResizeStart(e, img)} />
+                            </>
                         )}
                     </g>
                 );

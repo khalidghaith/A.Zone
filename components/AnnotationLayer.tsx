@@ -381,6 +381,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             return;
         }
 
+        if (activeType === 'eraser') return;
+
         // --- Bezier Tool Logic ---
         if (activeType === 'bezier') {
             // Stop dragging handles but keep the tool active for next point
@@ -404,7 +406,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             if (dist > 1) {
                 onAddAnnotation({
                     id: `ann-${Date.now()}`,
-                    type: activeType,
+                    type: activeType as AnnotationType,
                     points: finalPoints,
                     floor: currentFloor,
                     style: properties
@@ -534,7 +536,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
 
         return SketchManager.generatePath({
             id: 'temp',
-            type: activeType,
+            type: activeType as AnnotationType,
             points: previewPoints,
             floor: currentFloor,
             style: properties

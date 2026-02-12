@@ -221,7 +221,8 @@ export default function App() {
     const [isInventoryOpen, setIsInventoryOpen] = useState(true);
     const [connectionSourceId, setConnectionSourceId] = useState<string | null>(null);
     const [snapGuides, setSnapGuides] = useState<{ x?: number, y?: number } | null>(null);
-    const [overlayFloorId, setOverlayFloorId] = useState<number | null>(null);
+    const [floorOverlays, setFloorOverlays] = useState<Record<number, number | null>>(initialData?.floorOverlays || {});
+    const activeOverlayFloorId = floorOverlays[currentFloor] ?? null;
     const [isOverlaySelectorOpen, setIsOverlaySelectorOpen] = useState(false);
     const [isZoneDragging, setIsZoneDragging] = useState(false);
     const [isBubbleDragging, setIsBubbleDragging] = useState(false);
@@ -276,14 +277,15 @@ export default function App() {
                 floors,
                 currentFloor,
                 annotations,
-                referenceImages
+                referenceImages,
+                floorOverlays
             };
             localStorage.setItem('SOAP_PROJECT_AUTOSAVE', JSON.stringify(saveData));
             console.log("Project auto-saved (debounced)");
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [projectName, rooms, connections, zoneColors, appSettings, floors, currentFloor, annotations, referenceImages]);
+    }, [projectName, rooms, connections, zoneColors, appSettings, floors, currentFloor, annotations, referenceImages, floorOverlays]);
 
     // --- 3D / Volumes View Computations ---
     const verticalConnections = useMemo(() => {
@@ -908,6 +910,7 @@ export default function App() {
                     if (data.zoneColors) setZoneColors(data.zoneColors);
                     if (data.appSettings) setAppSettings(data.appSettings);
                     if (data.referenceImages) setReferenceImages(data.referenceImages);
+                    if (data.floorOverlays) setFloorOverlays(data.floorOverlays);
 
                     setHasInitialZoomed(false);
                     setViewMode('CANVAS');
@@ -1065,9 +1068,9 @@ export default function App() {
         e.target.value = '';
     };
 
-    const handleUpdateReferenceImage = (id: string, updates: Partial<ReferenceImage>) => {
+    const handleUpdateReferenceImage = useCallback((id: string, updates: Partial<ReferenceImage>) => {
         setReferenceImages(prev => prev.map(img => img.id === id ? { ...img, ...updates } : img));
-    };
+    }, []);
 
     const handleDeleteReferenceImage = (id: string) => {
         addToHistory();
@@ -1306,10 +1309,10 @@ export default function App() {
                 }
             `}</style>
             {/* Premium Header */}
-            <header className="h-12 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] relative transition-colors duration-300">
+            <header className="py-[5px] bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] relative transition-colors duration-300">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 group cursor-pointer">
-                        <img src={SoapLogo} className="w-8 h-8 rounded-lg shadow-lg shadow-orange-200/50 group-hover:scale-105" alt="SOAP" />
+                        <img src={SoapLogo} className="w-8 h-8 rounded-lg group-hover:scale-105" alt="SOAP" />
                         <div>
                             <input className="font-black text-slate-900 dark:text-gray-100 tracking-tight leading-none bg-transparent border-none focus:outline-none focus:ring-0 w-full p-0 text-sm" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
                             <p className="text-[9px] font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest">SOAP Project</p>
@@ -1639,8 +1642,8 @@ export default function App() {
                                     </div>
 
                                     {/* Floor Overlay Layer */}
-                                    {overlayFloorId !== null && (() => {
-                                        const overlayFloor = floors.find(f => f.id === overlayFloorId);
+                                    {activeOverlayFloorId !== null && (() => {
+                                        const overlayFloor = floors.find(f => f.id === activeOverlayFloorId);
                                         if (overlayFloor) {
                                             const overlayRooms = rooms.filter(r => r.isPlaced && r.floor === overlayFloor.id);
                                             return (
@@ -1777,7 +1780,7 @@ export default function App() {
                                             <div className="relative" ref={overlaySelectorRef}>
                                                 <button
                                                     onClick={() => setIsOverlaySelectorOpen(prev => !prev)}
-                                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${overlayFloorId !== null ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50' : 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5'}`}
+                                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${activeOverlayFloorId !== null ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800/50' : 'text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5'}`}
                                                     title="Select Overlay Floor"
                                                 >
                                                     <Layers size={16} />
@@ -1789,18 +1792,27 @@ export default function App() {
                                                             <button
                                                                 key={floor.id}
                                                                 onClick={() => {
-                                                                    setOverlayFloorId(prev => prev === floor.id ? null : floor.id);
+                                                                    setFloorOverlays(prev => ({
+                                                                        ...prev,
+                                                                        [currentFloor]: prev[currentFloor] === floor.id ? null : floor.id
+                                                                    }));
                                                                     setIsOverlaySelectorOpen(false);
                                                                 }}
-                                                                className={`w-full text-left px-2 py-1.5 rounded-md text-xs font-bold ${overlayFloorId === floor.id ? 'bg-orange-100 dark:bg-orange-900/20 text-orange-600' : 'text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}
+                                                                className={`w-full text-left px-2 py-1.5 rounded-md text-xs font-bold ${activeOverlayFloorId === floor.id ? 'bg-orange-100 dark:bg-orange-900/20 text-orange-600' : 'text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                                             >
                                                                 {floor.label}
                                                             </button>
                                                         ))}
                                                         {floors.length > 1 && <div className="h-px bg-slate-200 dark:bg-dark-border my-1" />}
                                                         <button
-                                                            onClick={() => { setOverlayFloorId(null); setIsOverlaySelectorOpen(false); }}
-                                                            className={`w-full text-left px-2 py-1.5 rounded-md text-xs font-bold ${overlayFloorId === null ? 'bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-white' : 'text-slate-500 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5'}`}
+                                                            onClick={() => {
+                                                                setFloorOverlays(prev => ({
+                                                                    ...prev,
+                                                                    [currentFloor]: null
+                                                                }));
+                                                                setIsOverlaySelectorOpen(false);
+                                                            }}
+                                                            className={`w-full text-left px-2 py-1.5 rounded-md text-xs font-bold ${activeOverlayFloorId === null ? 'bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-white' : 'text-slate-500 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                                         >
                                                             None
                                                         </button>

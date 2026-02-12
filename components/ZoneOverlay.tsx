@@ -173,7 +173,7 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
                     {/* Interactive Fill */}
                     <path
                         d={z.path}
-                        className={`${z.color.bg.replace('bg-', 'fill-')} hover:opacity-60 cursor-grab active:cursor-grabbing pointer-events-auto`}
+                        className={`${z.color.bg.replace('bg-', 'fill-')} hover:opacity-60 cursor-pointer active:cursor-grabbing pointer-events-auto`}
                         style={{ fillOpacity: appSettings.zoneTransparency }}
                         stroke="none"
                         fill="transparent"

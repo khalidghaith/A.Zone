@@ -140,7 +140,7 @@ export const ReferenceLayer: React.FC<ReferenceLayerProps> = ({
                             height={displayHeight}
                             opacity={img.opacity}
                             style={{
-                                cursor: img.isLocked ? 'default' : isScalingMode ? 'crosshair' : 'move',
+                                cursor: img.isLocked ? 'default' : isScalingMode ? 'crosshair' : 'pointer',
                                 pointerEvents: isReferenceMode ? 'all' : 'none'
                             }}
                             onMouseDown={(e) => handleMouseDown(e, img)}

@@ -941,7 +941,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 transform: `translate3d(${room.x}px, ${room.y}px, 0) rotate(${room.rotation || 0}deg)`,
                 width: (room.polygon || room.shape === 'bubble') ? 0 : room.width,
                 height: (room.polygon || room.shape === 'bubble') ? 0 : room.height,
-                cursor: isSketchMode ? 'default' : (isDragging ? 'grabbing' : 'grab')
+                cursor: isSketchMode ? 'default' : (isDragging ? 'grabbing' : 'pointer')
             }}
             onMouseDown={isSketchMode || isOverlay ? undefined : handleMouseDown}
         >

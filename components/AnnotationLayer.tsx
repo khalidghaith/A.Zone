@@ -595,7 +595,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                         } : isSelect ? {
                             style: {
                                 pointerEvents: 'all' as const,
-                                cursor: isDragging ? 'grabbing' : 'grab'
+                                cursor: isDragging ? 'grabbing' : 'pointer'
                             },
                             onMouseDown: (e: React.MouseEvent) => {
                                 e.stopPropagation(); // Prevent canvas deselect

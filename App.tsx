@@ -470,7 +470,7 @@ export default function App() {
 
     // Canvas Refs
     const mainRef = useRef<HTMLElement>(null);
-    const isPanning = useRef(false);
+    const [isPanning, setIsPanning] = useState(false);
     const inventoryRef = useRef<HTMLElement>(null);
     const prevMainRect = useRef<{ width: number, height: number } | null>(null);
     const lastMousePos = useRef<Point>({ x: 0, y: 0 });
@@ -542,7 +542,7 @@ export default function App() {
     const handlePanStart = (e: React.MouseEvent) => {
         // Allow pan on Middle Button OR Left Click on Background
         if (e.button === 1 || e.button === 0) {
-            isPanning.current = true;
+            setIsPanning(true);
             lastMousePos.current = { x: e.clientX, y: e.clientY };
             // If dragging background, we might also want to clear selection?
             // Let's clear selection if we started a pan on background and it wasn't valid selection target
@@ -557,7 +557,7 @@ export default function App() {
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (isPanning.current) {
+        if (isPanning) {
             const dx = e.clientX - lastMousePos.current.x;
             const dy = e.clientY - lastMousePos.current.y;
             setViewport(prev => ({
@@ -569,7 +569,7 @@ export default function App() {
     };
 
     const handleMouseUp = () => {
-        isPanning.current = false;
+        setIsPanning(false);
     };
 
     const handleZoomToFit = useCallback(() => {
@@ -1491,7 +1491,7 @@ export default function App() {
                             onDragOver={viewMode === 'VOLUMES' ? undefined : handleDragOver}
                             onDrop={viewMode === 'VOLUMES' ? undefined : handleDrop}
                             style={{
-                                cursor: viewMode === 'VOLUMES' ? 'default' : (isSketchMode ? 'crosshair' : (isPanning.current ? 'grabbing' : 'grab')),
+                                cursor: viewMode === 'VOLUMES' ? 'default' : (isSketchMode ? 'crosshair' : (isPanning ? 'grabbing' : 'default')),
                                 ...(viewMode !== 'VOLUMES' && showGrid ? {
                                     backgroundImage: `
                                         linear-gradient(to right, ${darkMode ? '#333' : '#e2e8f0'} 1px, transparent 1px),

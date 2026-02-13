@@ -82,6 +82,18 @@ const calculatePolygonArea = (points: Point[]): number => {
     return Math.abs(area) / 2;
 };
 
+const isPointInPolygon = (p: Point, polygon: Point[]): boolean => {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x, yi = polygon[i].y;
+        const xj = polygon[j].x, yj = polygon[j].y;
+        const intersect = ((yi > p.y) !== (yj > p.y))
+            && (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+};
+
 // Helper for file saving
 const saveFile = async (blob: Blob, suggestedName: string, extension: string) => {
     try {
@@ -630,8 +642,8 @@ export default function App() {
                 ...prev,
                 offset: { x: prev.offset.x + dx, y: prev.offset.y + dy }
             }));
-            lastMousePos.current = { x: e.clientX, y: e.clientY };
         }
+        lastMousePos.current = { x: e.clientX, y: e.clientY };
     };
 
     const handleTouchStart = (e: React.TouchEvent) => {
@@ -1287,31 +1299,29 @@ export default function App() {
     };
 
     const toggleLink = useCallback((roomId: string) => {
-        setConnectionSourceId(currentSourceId => {
-            if (currentSourceId === roomId) {
-                return null;
-            } else if (currentSourceId) {
-                setConnections(prev => {
-                    const existing = prev.find(c =>
-                        (c.fromId === currentSourceId && c.toId === roomId) ||
-                        (c.fromId === roomId && c.toId === currentSourceId)
-                    );
-                    if (!existing) {
-                        return [...prev, {
-                            id: `conn-${Date.now()}`,
-                            fromId: currentSourceId,
-                            toId: roomId
-                        }];
-                    } else {
-                        return prev.filter(c => c.id !== existing.id);
-                    }
-                });
-                return null;
-            } else {
-                return roomId;
-            }
-        });
-    }, []);
+        if (connectionSourceId === roomId) {
+            setConnectionSourceId(null);
+        } else if (connectionSourceId) {
+            setConnections(prev => {
+                const existing = prev.find(c =>
+                    (c.fromId === connectionSourceId && c.toId === roomId) ||
+                    (c.fromId === roomId && c.toId === connectionSourceId)
+                );
+                if (!existing) {
+                    return [...prev, {
+                        id: `conn-${Date.now()}`,
+                        fromId: connectionSourceId,
+                        toId: roomId
+                    }];
+                } else {
+                    return prev.filter(c => c.id !== existing.id);
+                }
+            });
+            setConnectionSourceId(null);
+        } else {
+            setConnectionSourceId(roomId);
+        }
+    }, [connectionSourceId]);
 
     const toggleFloorVisibility = useCallback((floorId: number) => {
         setHiddenFloorIds(prev => {
@@ -1533,7 +1543,7 @@ export default function App() {
                             if (options?.transparentBackground && node.classList && node.classList.contains('grid-layer')) return false;
                             return true;
                         },
-                        backgroundColor: options?.transparentBackground ? null : (darkMode ? '#020617' : '#f0f2f5')
+                        backgroundColor: null
                     });
                     if (blob) await saveFile(blob, finalName, 'png');
                 }
@@ -1846,7 +1856,7 @@ export default function App() {
                                 position: 'absolute',
                                 inset: 0,
                                 opacity: viewMode === 'CANVAS' ? 1 : 0,
-                                pointerEvents: viewMode === 'CANVAS' ? 'auto' : 'none',
+                                pointerEvents: 'none',
                                 zIndex: viewMode === 'CANVAS' ? 10 : 0,
                             }}>
                                 {/* Background Reference Images */}
@@ -1854,7 +1864,7 @@ export default function App() {
                                         className="absolute inset-0 origin-top-left"
                                         style={{
                                             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-                                            pointerEvents: isReferenceMode ? 'all' : 'none'
+                                            pointerEvents: isReferenceMode ? 'auto' : 'none'
                                         }}
                                     >
                                         <svg className="absolute inset-0 overflow-visible" style={{ pointerEvents: 'none' }}>
@@ -2012,6 +2022,44 @@ export default function App() {
                                                     onLinkToggle={toggleLink}
                                                     getSnappedPosition={getSnappedPosition}
                                                     onSelect={(id, multi) => {
+                                                        // Strict hit testing to avoid selecting when clicking bounding box corners
+                                                        const room = rooms.find(r => r.id === id);
+                                                        if (room) {
+                                                            const worldPos = toWorld(lastMousePos.current.x, lastMousePos.current.y);
+                                                            let isHit = false;
+                                                            
+                                                            if (room.polygon && room.polygon.length > 0) {
+                                                                const poly = room.polygon.map(pt => ({ x: room.x + pt.x, y: room.y + pt.y }));
+                                                                isHit = isPointInPolygon(worldPos, poly);
+                                                            } else if (room.shape === 'bubble') {
+                                                                // Ellipse check
+                                                                const centerX = room.x + room.width / 2;
+                                                                const centerY = room.y + room.height / 2;
+                                                                const rx = room.width / 2;
+                                                                const ry = room.height / 2;
+                                                                if (rx > 0 && ry > 0) {
+                                                                    const val = Math.pow(worldPos.x - centerX, 2) / Math.pow(rx, 2) + 
+                                                                                Math.pow(worldPos.y - centerY, 2) / Math.pow(ry, 2);
+                                                                    isHit = val <= 1;
+                                                                }
+                                                            } else {
+                                                                // Rect check (default)
+                                                                isHit = worldPos.x >= room.x && worldPos.x <= room.x + room.width &&
+                                                                        worldPos.y >= room.y && worldPos.y <= room.y + room.height;
+                                                            }
+
+                                                            if (!isHit) {
+                                                                // Clicked outside visual shape (but inside bounding box) -> Deselect
+                                                                if (!multi) {
+                                                                    setSelectedRoomIds(new Set());
+                                                                    setSelectedZone(null);
+                                                                    setSelectedAnnotationId(null);
+                                                                    if (connectionSourceId) setConnectionSourceId(null);
+                                                                }
+                                                                return;
+                                                            }
+                                                        }
+
                                                         if (connectionSourceId) {
                                                             toggleLink(id);
                                                             return;
@@ -2071,7 +2119,7 @@ export default function App() {
                                     </div>
 
                                     {/* Tools Bar (Top Left) */}
-                                    <div className="absolute top-6 left-6 flex flex-col gap-2 z-[200] export-exclude">
+                                    <div className="absolute top-6 left-6 flex flex-col gap-2 z-[200] export-exclude pointer-events-auto">
                                         <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm p-1.5 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-1">
                                             <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-full px-2 py-1 border border-slate-200/50 dark:border-dark-border gap-2 mr-1">
                                                 <span className="text-xs font-bold font-sans w-8 text-center">{gridSize}m</span>
@@ -2187,7 +2235,7 @@ export default function App() {
                                     </div>
 
                                     {/* Reference Panel - Moved to Top Left (Below Toolbar) */}
-                                    <div className="absolute top-20 left-6 z-[190] export-exclude">
+                                    <div className="absolute top-20 left-6 z-[190] export-exclude pointer-events-auto">
                                         <ReferenceToolbar
                                             isReferenceMode={isReferenceMode}
                                             selectedImage={referenceImages.find(i => i.id === selectedReferenceImageId) || null}
@@ -2200,7 +2248,7 @@ export default function App() {
                                         />
                                     </div>
 
-                                    <div className="absolute top-6 right-6 flex flex-col items-end gap-2 z-[200] export-exclude">
+                                    <div className="absolute top-6 right-6 flex flex-col items-end gap-2 z-[200] export-exclude pointer-events-auto">
                                         <div className="h-12 bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md px-4 rounded-full border border-slate-200 dark:border-dark-border shadow-xl flex items-center gap-4 animate-in slide-in-from-right-4 transition-all duration-300">
                                             <div className="flex items-center gap-2 text-slate-400">
                                                 <div className="h-1 w-12 bg-slate-300/50 dark:bg-white/10 rounded-full relative">
@@ -2228,7 +2276,7 @@ export default function App() {
                                     </div>
 
                                     {/* Floor Tabs Bar */}
-                                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-slate-200/50 dark:bg-black/40 flex items-start px-4 gap-1 z-40 backdrop-blur-sm border-t border-slate-200/50 dark:border-dark-border export-exclude">
+                                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-slate-200/50 dark:bg-black/40 flex items-start px-4 gap-1 z-40 backdrop-blur-sm border-t border-slate-200/50 dark:border-dark-border export-exclude pointer-events-auto">
                                         {floors.map(f => (
                                             <div
                                                 key={f.id}

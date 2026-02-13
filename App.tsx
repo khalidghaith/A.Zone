@@ -6,7 +6,7 @@ import { ApiKeyModal } from './components/ApiKeyModal';
 import { ZoneOverlay } from './components/ZoneOverlay'; // Newly added
 import { ExportModal } from './components/ExportModal';
 import { SettingsModal } from './components/SettingsModal';
-import { VolumesView } from './components/VolumesView';
+import { VolumesView, VolumesViewHandle } from './components/VolumesView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { applyMagneticPhysics } from './utils/physics'; // Newly added
 import { handleExport, getHexColorForZone, getHexBorderForZone } from './utils/exportSystem';
@@ -15,7 +15,7 @@ import {
     Plus, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
     TableProperties, Hexagon, Circle, Square,
     LandPlot, ChevronRight, ChevronLeft, Key, X, Settings, LayoutTemplate, Trash2, Lock, Unlock, BrushCleaning,
-    Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom, FileImage, Image as ImageIcon, Scaling, Box, Layers
+    Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom, FileImage, Image as ImageIcon, Scaling, Box, Layers, Save
 } from 'lucide-react';
 import { Annotation, AnnotationType, ArrowCapType, ReferenceImage, ReferenceScaleState } from './types';
 import { SketchToolbar } from './components/SketchToolbar';
@@ -23,6 +23,7 @@ import { AnnotationLayer } from './components/AnnotationLayer';
 import { ReferenceLayer } from './components/ReferenceLayer';
 import { ReferenceToolbar } from './components/ReferenceToolbar';
 import SoapLogo from './lib/symbols/SOAP-Logo.svg';
+import * as htmlToImage from 'html-to-image';
 
 // Shim process for libs that might expect it in Vite
 if (typeof window !== 'undefined' && !window.process) {
@@ -78,6 +79,38 @@ const calculatePolygonArea = (points: Point[]): number => {
         area -= points[j].x * points[i].y;
     }
     return Math.abs(area) / 2;
+};
+
+// Helper for file saving
+const saveFile = async (blob: Blob, suggestedName: string, extension: string) => {
+    try {
+        if ('showSaveFilePicker' in window) {
+            const handle = await (window as any).showSaveFilePicker({
+                suggestedName: `${suggestedName}.${extension}`,
+                types: [{
+                    description: 'File',
+                    accept: { [blob.type]: [`.${extension}`] },
+                }],
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+        } else {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${suggestedName}.${extension}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+    } catch (err: any) {
+        if (err.name !== 'AbortError') {
+            console.error('Failed to save file:', err);
+            alert('Failed to save file.');
+        }
+    }
 };
 
 type ViewMode = 'EDITOR' | 'CANVAS' | 'VOLUMES';
@@ -191,6 +224,8 @@ export default function App() {
     });
 
     const [cameraVersion, setCameraVersion] = useState(0);
+
+    const volumesViewRef = useRef<VolumesViewHandle>(null);
 
     // Extracted Handlers for Volumes View (to avoid conditional hook calls)
     const handleViewStateChange = useCallback((updates: any, incrementVersion = false) => {
@@ -807,7 +842,11 @@ export default function App() {
 
                 if (!inInput) {
                     e.preventDefault();
-                    setViewMode(prev => prev === 'EDITOR' ? 'CANVAS' : 'EDITOR');
+                    setViewMode(prev => {
+                        if (prev === 'EDITOR') return 'CANVAS';
+                        if (prev === 'CANVAS') return 'VOLUMES';
+                        return 'EDITOR';
+                    });
                 }
             }
         };
@@ -1405,6 +1444,100 @@ export default function App() {
 
     const zoneArea = selectedZoneRooms.reduce((acc, r) => acc + r.area, 0);
 
+
+
+    const handleSave = async (format: 'json' | 'png' | 'pdf' | 'obj' | 'csv', options?: any) => {
+        setShowExportModal(false);
+        const name = options?.filename || projectName || 'project';
+        const finalName = name.trim().replace(/[\\/:"*?<>|]/g, '_'); // Sanitize filename
+
+        if (format === 'json') {
+            const data = {
+                projectName,
+                rooms,
+                connections,
+                floors,
+                currentFloor,
+                zoneColors,
+                appSettings,
+                referenceImages,
+                floorOverlays,
+                annotations
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            await saveFile(blob, finalName, 'json');
+        } else if (format === 'csv') {
+            const headers = "Name,Area,Zone,Floor\n";
+            const csvContent = rooms.map(r => `${r.name},${r.area},${r.zone},${floors.find(f => f.id === r.floor)?.label || 'Unplaced'}`).join('\n');
+            const blob = new Blob([headers + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `${finalName}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+        } else if (format === 'obj') {
+            if (volumesViewRef.current) {
+                const blob = volumesViewRef.current.exportOBJ();
+                if (blob) {
+                    await saveFile(blob, finalName, 'obj');
+                } else {
+                    alert("Failed to export 3D model.");
+                }
+            }
+        } else if (format === 'png') {
+            try {
+                if (viewMode === 'VOLUMES' && volumesViewRef.current) {
+                    const blob = await volumesViewRef.current.captureScreenshot();
+                    if (blob) await saveFile(blob, finalName, 'png');
+                } else if ((viewMode === 'CANVAS' || viewMode === 'EDITOR') && mainRef.current) {
+                    const scale = options?.scale || 2;
+                    const blob = await htmlToImage.toBlob(mainRef.current, {
+                        pixelRatio: scale,
+                        filter: (node) => {
+                            // Exclude UI elements
+                            if (node.classList && node.classList.contains('export-exclude')) return false;
+                            // Exclude Grid if transparent background is requested
+                            if (options?.transparentBackground && node.classList && node.classList.contains('grid-layer')) return false;
+                            return true;
+                        },
+                        backgroundColor: options?.transparentBackground ? null : (darkMode ? '#020617' : '#f0f2f5')
+                    });
+                    if (blob) await saveFile(blob, finalName, 'png');
+                }
+            } catch (err) {
+                console.error("Image export failed", err);
+                alert("Failed to export image.");
+            }
+        } else if (format === 'pdf') {
+            await handleExport(format, finalName, rooms, connections, currentFloor, darkMode, zoneColors, floors, appSettings, annotations, options, currentStyle, referenceImages);
+        }
+    };
+
+    const getCanvasPreview = useCallback(async () => {
+        if (viewMode === 'VOLUMES' && volumesViewRef.current) {
+            const blob = await volumesViewRef.current.captureScreenshot();
+            return blob ? URL.createObjectURL(blob) : null;
+        } else if ((viewMode === 'CANVAS' || viewMode === 'EDITOR') && mainRef.current) {
+            try {
+                return await htmlToImage.toPng(mainRef.current, {
+                    pixelRatio: 0.5, // Low res for preview
+                    filter: (node) => {
+                        if (node.classList && node.classList.contains('export-exclude')) return false;
+                        return true;
+                    },
+                    backgroundColor: darkMode ? '#020617' : '#f0f2f5' // Preview with background
+                });
+            } catch (e) {
+                console.error("Preview generation failed", e);
+                return null;
+            }
+        }
+        return null;
+    }, [viewMode, darkMode, rooms, connections, currentFloor]);
+
     return (
         <div className="h-screen w-screen flex flex-col bg-slate-50 dark:bg-dark-bg overflow-hidden font-sans selection:bg-orange-500/20 transition-colors duration-300">
             <style>{`
@@ -1417,6 +1550,11 @@ export default function App() {
                 }
                 input[type=number] {
                     -moz-appearance: textfield;
+                }
+                @media print {
+                    header, aside, .export-exclude { display: none !important; }
+                    main { position: static !important; overflow: visible !important; }
+                    body { background: white !important; }
                 }
             `}</style>
             {/* Premium Header */}
@@ -1494,7 +1632,7 @@ export default function App() {
                     <button
                         onClick={() => setShowExportModal(true)} className="h-8 px-3 text-slate-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-2 group"
                     >
-                        <Upload size={14} className="group-hover:-translate-y-0.5" /> Export
+                        <Save size={14} className="group-hover:-translate-y-0.5" /> Save
                     </button>
 
                     <div className="flex items-center">
@@ -1507,7 +1645,13 @@ export default function App() {
             </header>
 
             <div className="flex-1 flex overflow-hidden relative">
-                {viewMode === 'EDITOR' ? (
+                <div
+                    className="absolute inset-0 z-50 bg-slate-50 dark:bg-dark-bg flex flex-col"
+                    style={{
+                        visibility: viewMode === 'EDITOR' ? 'visible' : 'hidden',
+                        pointerEvents: viewMode === 'EDITOR' ? 'auto' : 'none',
+                    }}
+                >
                     <ProgramEditor
                         rooms={rooms}
                         updateRoom={updateRoom}
@@ -1520,15 +1664,16 @@ export default function App() {
                         onAddZone={handleAddZone}
                         onInteractionStart={addToHistory}
                     />
-                ) : (
-                    <>
-                        <aside
-                            ref={inventoryRef}
-                            className={`${isInventoryOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-r border-slate-200/50 dark:border-dark-border flex flex-col z-30 shadow-[10px_0_30px_rgba(0,0,0,0.02)] transition-all duration-300 ${isInventoryHovered ? 'ring-2 ring-orange-400 ring-inset bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
-                            onDragOver={handleInventoryDragOver}
-                            onDrop={handleInventoryDrop}
-                        >
-                            {isInventoryOpen ? (
+                </div>
+
+                <aside
+                    ref={inventoryRef}
+                    className={`${isInventoryOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-r border-slate-200/50 dark:border-dark-border flex flex-col z-30 shadow-[10px_0_30px_rgba(0,0,0,0.02)] transition-all duration-300 ${isInventoryHovered ? 'ring-2 ring-orange-400 ring-inset bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
+                    onDragOver={handleInventoryDragOver}
+                    onDrop={handleInventoryDrop}
+                    style={{ visibility: viewMode === 'EDITOR' ? 'hidden' : 'visible' }}
+                >
+                    {isInventoryOpen ? (
                                 <>
                                     <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/30 dark:bg-white/5 h-20">
                                         <div>
@@ -1594,64 +1739,86 @@ export default function App() {
                                     <ChevronRight size={18} className="text-slate-400 mb-4" />
                                 </div>
                             )}
-                        </aside>
+                </aside>
 
-                        <main
-                            ref={mainRef}
-                            className={`flex-1 relative overflow-hidden bg-[#f0f2f5] dark:bg-dark-bg transition-colors duration-500 ${isZoneDragging ? 'no-transition' : ''}`}
-                            onMouseDown={isSketchMode || viewMode === 'VOLUMES' ? undefined : handlePanStart}
-                            onMouseMove={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleMouseMove}
-                            onMouseUp={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleMouseUp}
-                            onTouchStart={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchStart}
-                            onTouchMove={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchMove}
-                            onTouchEnd={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchEnd}
-                            onDragOver={viewMode === 'VOLUMES' ? undefined : handleDragOver}
-                            onDrop={viewMode === 'VOLUMES' ? undefined : handleDrop}
-                            style={{
-                                touchAction: 'none',
-                                cursor: viewMode === 'VOLUMES' ? 'default' : (isSketchMode ? 'crosshair' : (isPanning ? 'grabbing' : 'default')),
-                                ...(viewMode !== 'VOLUMES' && showGrid ? {
-                                    backgroundImage: `
-                                        linear-gradient(to right, ${darkMode ? '#333' : '#e2e8f0'} 1px, transparent 1px),
-                                        linear-gradient(to bottom, ${darkMode ? '#333' : '#e2e8f0'} 1px, transparent 1px)
-                                    `,
-                                    backgroundSize: `${gridSize * PIXELS_PER_METER * scale}px ${gridSize * PIXELS_PER_METER * scale}px`,
-                                    backgroundPosition: `${offset.x}px ${offset.y}px`
-                                } : {})
-                            }}
-                        >        {/* Reset selection if clicking background (unless panning) */}
+                <main
+                    ref={mainRef}
+                    className={`flex-1 relative overflow-hidden bg-[#f0f2f5] dark:bg-dark-bg transition-colors duration-500 ${isZoneDragging ? 'no-transition' : ''}`}
+                    onMouseDown={isSketchMode || viewMode === 'VOLUMES' ? undefined : handlePanStart}
+                    onMouseMove={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleMouseMove}
+                    onMouseUp={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleMouseUp}
+                    onTouchStart={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchStart}
+                    onTouchMove={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchMove}
+                    onTouchEnd={isSketchMode || viewMode === 'VOLUMES' ? undefined : handleTouchEnd}
+                    onDragOver={viewMode === 'VOLUMES' ? undefined : handleDragOver}
+                    onDrop={viewMode === 'VOLUMES' ? undefined : handleDrop}
+                    style={{
+                        touchAction: 'none',
+                        cursor: viewMode === 'VOLUMES' ? 'default' : (isSketchMode ? 'crosshair' : (isPanning ? 'grabbing' : 'default')),
+                        visibility: viewMode === 'EDITOR' ? 'hidden' : 'visible'
+                    }}
+                >        {/* Reset selection if clicking background (unless panning) */}
                             {/* The onMouseDown handler above already handles this */}
 
-                            {viewMode === 'VOLUMES' ? (
-                                <ErrorBoundary fallback={
-                                    <div className="flex items-center justify-center h-full text-red-500 bg-red-50 p-8 rounded-lg flex-col gap-4">
-                                        <p className="font-bold text-lg">Failed to load Volumes View</p>
-                                        <p className="text-sm text-red-700">Please check the console for more details.</p>
-                                        <button onClick={() => window.location.reload()} className="px-4 py-2 bg-red-600 text-white rounded shadow hover:bg-red-700 transition">Reload App</button>
-                                    </div>
-                                }>
-                                    <VolumesView
-                                        rooms={rooms}
-                                        floors={floors}
-                                        verticalConnections={verticalConnections}
-                                        zoneColors={zoneColors}
-                                        pixelsPerMeter={PIXELS_PER_METER}
-                                        connectionSourceId={connectionSourceId}
-                                        onLinkToggle={toggleLink}
-                                        appSettings={appSettings}
-                                        diagramStyle={currentStyle}
-                                        selectedRoomIds={selectedRoomIds}
-                                        darkMode={darkMode}
-                                        gridSize={gridSize}
-                                        viewState={volumesViewState}
-                                        onViewStateChange={handleViewStateChange}
-                                        onRoomSelect={handleVolumeRoomSelect}
-                                        cameraVersion={cameraVersion}
-                                    />
-                                </ErrorBoundary>
-                            ) : (
-                                <>
-                                    {/* Background Reference Images */}
+                            {/* Grid Layer - Separate for export filtering */}
+                            {viewMode !== 'VOLUMES' && showGrid && (
+                                <div
+                                    className="absolute inset-0 pointer-events-none grid-layer"
+                                    style={{
+                                        zIndex: 0,
+                                        backgroundImage: `
+                                            linear-gradient(to right, ${darkMode ? '#333' : '#e2e8f0'} 1px, transparent 1px),
+                                            linear-gradient(to bottom, ${darkMode ? '#333' : '#e2e8f0'} 1px, transparent 1px)
+                                        `,
+                                        backgroundSize: `${gridSize * PIXELS_PER_METER * scale}px ${gridSize * PIXELS_PER_METER * scale}px`,
+                                        backgroundPosition: `${offset.x}px ${offset.y}px`
+                                    }}
+                                />
+                            )}
+
+                            <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                opacity: viewMode === 'VOLUMES' ? 1 : 0,
+                                pointerEvents: viewMode === 'VOLUMES' ? 'auto' : 'none',
+                                zIndex: viewMode === 'VOLUMES' ? 10 : 0,
+                            }}>
+                               <ErrorBoundary fallback={
+                                   <div className="flex items-center justify-center h-full text-red-500 bg-red-50 p-8 rounded-lg flex-col gap-4">
+                                       <p className="font-bold text-lg">Failed to load Volumes View</p>
+                                       <p className="text-sm text-red-700">Please check the console for more details.</p>
+                                       <button onClick={() => window.location.reload()} className="px-4 py-2 bg-red-600 text-white rounded shadow hover:bg-red-700 transition">Reload App</button>
+                                   </div>
+                               }>
+                                   <VolumesView
+                                       ref={volumesViewRef}
+                                       rooms={rooms}
+                                       floors={floors}
+                                       verticalConnections={verticalConnections}
+                                       zoneColors={zoneColors}
+                                       pixelsPerMeter={PIXELS_PER_METER}
+                                       connectionSourceId={connectionSourceId}
+                                       onLinkToggle={toggleLink}
+                                       appSettings={appSettings}
+                                       diagramStyle={currentStyle}
+                                       selectedRoomIds={selectedRoomIds}
+                                       darkMode={darkMode}
+                                       gridSize={gridSize}
+                                       viewState={volumesViewState}
+                                       onViewStateChange={handleViewStateChange}
+                                       onRoomSelect={handleVolumeRoomSelect}
+                                       cameraVersion={cameraVersion}
+                                   />
+                               </ErrorBoundary>
+                            </div>
+                            <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                opacity: viewMode !== 'VOLUMES' ? 1 : 0,
+                                pointerEvents: viewMode !== 'VOLUMES' ? 'auto' : 'none',
+                                zIndex: viewMode !== 'VOLUMES' ? 10 : 0,
+                            }}>
+                                {/* Background Reference Images */}
                                     <div
                                         className="absolute inset-0 origin-top-left"
                                         style={{
@@ -1869,7 +2036,7 @@ export default function App() {
                                     </div>
 
                                     {/* Tools Bar (Top Left) */}
-                                    <div className="absolute top-6 left-6 flex flex-col gap-2 z-[200]">
+                                    <div className="absolute top-6 left-6 flex flex-col gap-2 z-[200] export-exclude">
                                         <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm p-1.5 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-1">
                                             <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-full px-2 py-1 border border-slate-200/50 dark:border-dark-border gap-2 mr-1">
                                                 <span className="text-xs font-bold font-sans w-8 text-center">{gridSize}m</span>
@@ -1985,7 +2152,7 @@ export default function App() {
                                     </div>
 
                                     {/* Reference Panel - Moved to Top Left (Below Toolbar) */}
-                                    <div className="absolute top-20 left-6 z-[190]">
+                                    <div className="absolute top-20 left-6 z-[190] export-exclude">
                                         <ReferenceToolbar
                                             isReferenceMode={isReferenceMode}
                                             selectedImage={referenceImages.find(i => i.id === selectedReferenceImageId) || null}
@@ -1998,7 +2165,7 @@ export default function App() {
                                         />
                                     </div>
 
-                                    <div className="absolute top-6 right-6 flex flex-col items-end gap-2 z-[200]">
+                                    <div className="absolute top-6 right-6 flex flex-col items-end gap-2 z-[200] export-exclude">
                                         <div className="h-12 bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md px-4 rounded-full border border-slate-200 dark:border-dark-border shadow-xl flex items-center gap-4 animate-in slide-in-from-right-4 transition-all duration-300">
                                             <div className="flex items-center gap-2 text-slate-400">
                                                 <div className="h-1 w-12 bg-slate-300/50 dark:bg-white/10 rounded-full relative">
@@ -2026,7 +2193,7 @@ export default function App() {
                                     </div>
 
                                     {/* Floor Tabs Bar */}
-                                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-slate-200/50 dark:bg-black/40 flex items-start px-4 gap-1 z-40 backdrop-blur-sm border-t border-slate-200/50 dark:border-dark-border">
+                                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-slate-200/50 dark:bg-black/40 flex items-start px-4 gap-1 z-40 backdrop-blur-sm border-t border-slate-200/50 dark:border-dark-border export-exclude">
                                         {floors.map(f => (
                                             <div
                                                 key={f.id}
@@ -2077,12 +2244,11 @@ export default function App() {
                                             <Plus size={12} />
                                         </button>
                                     </div>
-                                </>
-                            )}
-                        </main>
+                    </div>
+                </main>
 
-                        <aside className={`${isRightSidebarOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-l border-slate-200 dark:border-dark-border flex flex-col z-20 shadow-2xl transition-all duration-300`}>
-                            {isRightSidebarOpen ? (
+                <aside className={`${isRightSidebarOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-l border-slate-200 dark:border-dark-border flex flex-col z-20 shadow-2xl transition-all duration-300`} style={{ visibility: viewMode === 'EDITOR' ? 'hidden' : 'visible' }}>
+                    {isRightSidebarOpen ? (
                                 <>
                                     <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/50 dark:bg-white/5 h-20">
                                         <h2 className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest truncate max-w-[180px]">
@@ -2404,9 +2570,7 @@ export default function App() {
                                     <ChevronLeft size={18} className="text-slate-400 mb-4" />
                                 </div>
                             )}
-                        </aside>
-                    </>
-                )}
+                </aside>
             </div>
 
             {
@@ -2422,30 +2586,11 @@ export default function App() {
             {
                 showExportModal && (
                     <ExportModal
+                        projectName={projectName}
                         onClose={() => setShowExportModal(false)}
                         viewMode={viewMode}
-                        onExport={(format) => {
-                            if (format === 'csv') {
-                                // CSV Export Logic
-                                const headers = "Name,Area,Zone,Floor\n";
-                                const csvContent = rooms.map(r => `${r.name},${r.area},${r.zone},${floors.find(f => f.id === r.floor)?.label || 'Unplaced'}`).join('\n');
-                                const blob = new Blob([headers + csvContent], { type: 'text/csv;charset=utf-8;' });
-                                const link = document.createElement("a");
-                                if (link.download !== undefined) {
-                                    const url = URL.createObjectURL(blob);
-                                    link.setAttribute("href", url);
-                                    link.setAttribute("download", `${projectName}.csv`);
-                                    link.style.visibility = 'hidden';
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                }
-                                setShowExportModal(false);
-                                return;
-                            }
-                            handleExport(format, projectName, rooms, connections, currentFloor, darkMode, zoneColors, floors, appSettings, annotations);
-                            setShowExportModal(false);
-                        }}
+                        onExport={handleSave}
+                        onPreview={getCanvasPreview}
                     />
                 )
             }

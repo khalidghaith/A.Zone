@@ -348,7 +348,13 @@ function CameraController({ zoomTrigger, placedRooms, floors, onFitComplete }: {
         const distance = maxDim * 2;
 
         // Preserve current orientation
-        const currentDir = new THREE.Vector3().subVectors(camera.position, (controls as any).target).normalize();
+        const currentDir = new THREE.Vector3();
+        if (controls) {
+            currentDir.subVectors(camera.position, (controls as any).target).normalize();
+        } else {
+            camera.getWorldDirection(currentDir).negate();
+        }
+
         // Fallback to default orientation if current direction is invalid (e.g. zero length)
         if (currentDir.lengthSq() < 0.0001) currentDir.set(1, -1, 1).normalize();
 

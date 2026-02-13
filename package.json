@@ -13,10 +13,14 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@types/three": "^0.182.0",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.1.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "three": "^0.182.0"
+    "svg2pdf.js": "^2.7.0",
+    "three": "^0.182.0",
+    "three-stdlib": "^2.36.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

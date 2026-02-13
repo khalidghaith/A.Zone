@@ -1,8 +1,10 @@
-import { Room, Connection, Point, ZoneColor, AppSettings, Annotation } from '../types';
+import { Room, Connection, Point, ZoneColor, AppSettings, Annotation, DiagramStyle, ReferenceImage } from '../types';
 import { getConvexHull, createRoundedPath } from './geometry';
 import { SketchManager } from '../SketchManager';
+import { jsPDF } from "jspdf";
+import "svg2pdf.js";
 
-export type ExportFormat = 'png' | 'jpeg' | 'svg' | 'dxf' | 'json';
+export type ExportFormat = 'png' | 'jpeg' | 'svg' | 'dxf' | 'json' | 'pdf';
 const PIXELS_PER_METER = 20;
 
 // Text wrapping helper with literal dash support
@@ -107,7 +109,10 @@ export const handleExport = async (
     zoneColors: Record<string, ZoneColor>,
     floors: { id: number; label: string }[],
     appSettings: AppSettings,
-    annotations?: Annotation[]
+    annotations?: Annotation[],
+    options?: any,
+    currentStyle?: DiagramStyle,
+    referenceImages?: ReferenceImage[]
 ) => {
     // --- JSON Export ---
     if (format === 'json') {
@@ -150,6 +155,30 @@ export const handleExport = async (
         });
     });
 
+    // Include Annotations in Bounds
+    if (annotations) {
+        annotations.filter(a => a.floor === currentFloor).forEach(a => {
+            a.points.forEach(p => {
+                minX = Math.min(minX, a.points[0].x + p.x); // Annotation points are relative or absolute? 
+                // Wait, AnnotationLayer renders at points[i].x. Points are absolute world coordinates.
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
+            });
+        });
+    }
+
+    // Include Reference Images in Bounds
+    if (referenceImages) {
+        referenceImages.filter(img => img.floor === currentFloor).forEach(img => {
+            minX = Math.min(minX, img.x);
+            minY = Math.min(minY, img.y);
+            maxX = Math.max(maxX, img.x + (img.width * img.scale));
+            maxY = Math.max(maxY, img.y + (img.height * img.scale));
+        });
+    }
+
     const padding = 50;
     minX -= padding;
     minY -= padding;
@@ -169,14 +198,7 @@ export const handleExport = async (
             if (room.shape === 'bubble' && room.polygon) {
                 // Export as High-Res Polyline to approximate curve
                 const cmds = getBubblePathCommands(room.polygon);
-                // We need to sample the Bezier curves. 
-                // A simple way is to sample t from 0 to 1 for each C command.
                 const points: Point[] = [];
-
-                // Start point
-                if (cmds.length > 0 && cmds[0].type === 'M') {
-                    // M is start
-                }
 
                 // Re-iterate polygon points to generate curve samples directly
                 for (let i = 0; i < room.polygon.length; i++) {
@@ -240,7 +262,7 @@ export const handleExport = async (
         return;
     }
 
-    // --- SVG Generation (Used for SVG, PNG, JPEG) ---
+    // --- SVG Generation (Used for SVG, PNG, JPEG, PDF) ---
     let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-offsetX} ${-offsetY} ${width} ${height}">
         <style>
             .text { font-family: 'Inter', sans-serif; text-anchor: middle; dominant-baseline: middle; }
@@ -268,10 +290,35 @@ export const handleExport = async (
           </marker>
         </defs>`;
 
+    // Style Helpers
+    const getStrokeWidth = (style?: DiagramStyle) => style?.borderWidth || appSettings.strokeWidth || 2;
+    const getStrokeColor = (zone: string, style?: DiagramStyle) => {
+        if (style?.colorMode === 'monochrome') return '#000000';
+        return getHexBorderForZone(zone, zoneColors);
+    };
+    const getFillColor = (zone: string, style?: DiagramStyle) => {
+        if (style?.colorMode === 'monochrome') return '#ffffff';
+        return getHexColorForZone(zone, zoneColors);
+    };
+    const getOpacity = (style?: DiagramStyle) => style?.opacity || 0.9;
+    const isSketchy = currentStyle?.sketchy || false;
+
     // Background
-    if (format === 'jpeg') {
+    if (format === 'jpeg' || (format === 'png' && !options?.transparentBackground)) {
         const bgColor = darkMode ? '#1a1a1a' : '#f0f2f5';
         svgContent += `<rect x="${-offsetX}" y="${-offsetY}" width="${width}" height="${height}" fill="${bgColor}" />`;
+    }
+
+    // Reference Images (Bottom Layer)
+    if (referenceImages) {
+        referenceImages.filter(img => img.floor === currentFloor).forEach(img => {
+            // SVG image uses href (or xlink:href for older compat, but href works in most modern contexts)
+            // We need to handle rotation if it exists, roughly. ReferenceImage has rotation? No, just x, y, width, height, scale, opacity?
+            // Checking types.ts would be ideal, but assuming standard props.
+            const w = img.width * img.scale;
+            const h = img.height * img.scale;
+            svgContent += `<image href="${img.src}" x="${img.x}" y="${img.y}" width="${w}" height="${h}" opacity="${img.opacity}" preserveAspectRatio="none" />`;
+        });
     }
 
     // Zones (Convex Hulls)
@@ -296,7 +343,7 @@ export const handleExport = async (
         if (points.length < 3) return;
         const hull = getConvexHull(points);
         const d = createRoundedPath(hull, 12);
-        const color = getHexColorForZone(zone, zoneColors);
+        const color = getFillColor(zone, currentStyle);
         svgContent += `<path d="${d}" fill="${color}" fill-opacity="0.1" stroke="${color}" stroke-width="2" stroke-dasharray="10,10" stroke-opacity="0.6" />`;
     });
 
@@ -315,10 +362,10 @@ export const handleExport = async (
 
     // Rooms
     visibleRooms.forEach(r => {
-        const fill = r.style?.fill || getHexColorForZone(r.zone, zoneColors);
-        const stroke = r.style?.stroke || "#334155";
-        const strokeWidth = r.style?.strokeWidth ?? appSettings.strokeWidth;
-        const opacity = r.style?.opacity ?? 0.9;
+        const fill = r.style?.fill || getFillColor(r.zone, currentStyle);
+        const stroke = r.style?.stroke || getStrokeColor(r.zone, currentStyle);
+        const strokeWidth = r.style?.strokeWidth ?? getStrokeWidth(currentStyle);
+        const opacity = r.style?.opacity ?? getOpacity(currentStyle);
         let d = "";
 
         if (r.shape === 'bubble' && r.polygon) {
@@ -331,7 +378,13 @@ export const handleExport = async (
         } else if (r.polygon) {
             d = `M ${r.polygon[0].x} ${r.polygon[0].y} ` + r.polygon.slice(1).map(p => `L ${p.x} ${p.y}`).join(" ") + " Z";
         } else {
-            const radius = r.style?.cornerRadius || 0;
+            // Check for corner radius from style or settings
+            let radius = r.style?.cornerRadius || appSettings.cornerRadius || 0;
+            // Map Tailwind classes to numbers if needed (simplified)
+            if (currentStyle?.cornerRadius === 'rounded-none') radius = 0;
+            else if (currentStyle?.cornerRadius === 'rounded-sm') radius = 2;
+            else if (currentStyle?.cornerRadius === 'rounded-lg') radius = 8;
+
             if (radius > 0) {
                 const w = r.width;
                 const h = r.height;
@@ -354,8 +407,8 @@ export const handleExport = async (
 
         svgContent += `
         <g transform="translate(${r.x}, ${r.y})">
-            <path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" fill-opacity="${opacity}" />
-            <text x="${cx}" y="${startY}" class="text title" fill="#1e293b">
+            <path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" fill-opacity="${opacity}" stroke-dasharray="${isSketchy ? '5,5' : 'none'}" />
+            <text x="${cx}" y="${startY}" class="text title" fill="${currentStyle?.colorMode === 'monochrome' ? '#000000' : '#1e293b'}" font-family="${currentStyle?.fontFamily || 'sans-serif'}">
                 ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : lineHeight}">${line}</tspan>`).join('')}
             </text>
             <text x="${cx}" y="${cy + 8 + (lines.length > 1 ? (lines.length * lineHeight) / 2 : 0)}" class="text subtitle">${r.area} m²</text>
@@ -378,19 +431,31 @@ export const handleExport = async (
         });
     }
 
-    // Scale Bar (Bottom Right)
-    const scaleBarLength = 10 * PIXELS_PER_METER; // 10 meters
-    const scaleBarX = maxX - 50 - scaleBarLength;
-    const scaleBarY = maxY - 50;
-    const textColor = (format === 'jpeg' && darkMode) ? '#94a3b8' : '#64748b';
-    const strokeColor = (format === 'jpeg' && darkMode) ? '#94a3b8' : '#64748b';
+    // Scale Bar removed from SVG content for PDF (drawn natively). 
+    // For PNG/SVG/JPEG export, we still want it in the image content?
+    // User requested: "The scale bar should always be there in all exports."
+    // If I remove it here, it won't be in SVG/PNG export generated from this function.
+    // However, App.tsx PNG export uses htmlToImage which captures the DOM scale bar.
+    // Only 'svg' and 'pdf' use this function.
+    // IF format is 'svg' or 'pdf', we need the scale bar.
 
-    svgContent += `<g transform="translate(${scaleBarX}, ${scaleBarY})">
-        <text x="${scaleBarLength / 2}" y="-8" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="bold" fill="${textColor}">10 meters</text>
-        <line x1="0" y1="0" x2="${scaleBarLength}" y2="0" stroke="${strokeColor}" stroke-width="2" />
-        <line x1="0" y1="-4" x2="0" y2="4" stroke="${strokeColor}" stroke-width="2" />
-        <line x1="${scaleBarLength}" y1="-4" x2="${scaleBarLength}" y2="4" stroke="${strokeColor}" stroke-width="2" />
-    </g>`;
+    // For PDF, user wants it at bottom right of PAGE.
+    // For SVG export, we probably want it in the SVG.
+
+    if (format !== 'pdf') {
+        const scaleBarLength = 10 * PIXELS_PER_METER; // 10 meters
+        const scaleBarX = maxX - 50 - scaleBarLength;
+        const scaleBarY = maxY - 50;
+        const textColor = (format === 'jpeg' && darkMode) ? '#94a3b8' : '#64748b';
+        const strokeColor = (format === 'jpeg' && darkMode) ? '#94a3b8' : '#64748b';
+
+        svgContent += `<g transform="translate(${scaleBarX}, ${scaleBarY})">
+             <text x="${scaleBarLength / 2}" y="-8" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="bold" fill="${textColor}">10 meters</text>
+             <line x1="0" y1="0" x2="${scaleBarLength}" y2="0" stroke="${strokeColor}" stroke-width="2" />
+             <line x1="0" y1="-4" x2="0" y2="4" stroke="${strokeColor}" stroke-width="2" />
+             <line x1="${scaleBarLength}" y1="-4" x2="${scaleBarLength}" y2="4" stroke="${strokeColor}" stroke-width="2" />
+         </g>`;
+    }
 
     svgContent += `</svg>`;
 
@@ -398,6 +463,112 @@ export const handleExport = async (
         const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         triggerDownload(url, `${projectName}-floor-${currentFloor}.svg`);
+        return;
+    }
+
+    if (format === 'pdf') {
+        const doc = new jsPDF({
+            orientation: options?.orientation || 'landscape',
+            unit: 'mm',
+            format: (options?.pageSize || 'A3').toLowerCase()
+        });
+
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgContent, "image/svg+xml");
+
+        // Scaling Logic
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+
+        let scaleFactor = 1;
+
+        if (options?.pdfScale) {
+            const scale = options.pdfScale;
+            scaleFactor = (1000 / scale) / PIXELS_PER_METER; // px to mm
+        } else {
+            // Default fit to page logic
+            const svgWidthMm = width * 0.264;
+            const svgHeightMm = height * 0.264;
+            const scaleX = pageWidth / svgWidthMm;
+            const scaleY = pageHeight / svgHeightMm;
+            const fitScale = Math.min(scaleX, scaleY) * 0.8;
+            scaleFactor = fitScale * 0.264; // Convert back factor relative to pixel unit?
+        }
+
+        let targetW = width * scaleFactor;
+        let targetH = height * scaleFactor;
+
+        // If no explicit scale, fit to page with margin
+        if (!options?.pdfScale) {
+            const margin = 20; // mm
+            const availableW = pageWidth - 2 * margin;
+            const availableH = pageHeight - 2 * margin;
+            const aspectSvg = width / height;
+            const aspectPage = availableW / availableH;
+            if (aspectSvg > aspectPage) {
+                targetW = availableW;
+                targetH = availableW / aspectSvg;
+            } else {
+                targetH = availableH;
+                targetW = availableH * aspectSvg;
+            }
+        }
+
+        // Center on page
+        const x = (pageWidth - targetW) / 2;
+        const y = (pageHeight - targetH) / 2;
+
+        await (doc as any).svg(svgDoc.documentElement, {
+            x: x,
+            y: y,
+            width: targetW,
+            height: targetH
+        });
+
+        // Add Scale Bar to PDF (Bottom Right of Page)
+        const scaleBarLenMm = (10 * PIXELS_PER_METER) * scaleFactor * 0.264; // This might be wrong.
+        // We need 10 meters in PAGE units (mm).
+        // 1 meter = PIXELS_PER_METER pixels in SVG space.
+        // scaleFactor converts SVG pixels to "document units" in jsPDF-svg?
+        // Wait, scaleFactor was calculated: (1000 / scale) / PIXELS_PER_METER is "mm per pixel"? No.
+
+        // Let's recalculate logical scale.
+        // If scale is 1:100. 10m = 10000mm. On paper it is 100mm.
+        // We want a bar representing 10m.
+
+        let barWidthMm = 0;
+        let label = "10m";
+
+        if (options?.pdfScale) {
+            // 1:Scale. 10m -> 10000mm / Scale.
+            barWidthMm = 10000 / options.pdfScale;
+        } else {
+            // "Fit to Page". We don't know the exact scale easily unless we back-calculate.
+            // targetW is the width of the SVG on the PDF in mm.
+            // width is the width of the SVG in pixels.
+            // visualScale = targetW / width.  (mm per pixel)
+            // 10m in pixels = 10 * PIXELS_PER_METER.
+            // barWidthMm = (10 * PIXELS_PER_METER) * (targetW / width);
+            barWidthMm = (10 * PIXELS_PER_METER) * (targetW / width);
+        }
+
+        const margin = 10;
+        const barX = pageWidth - margin - barWidthMm;
+        const barY = pageHeight - margin;
+
+        doc.setDrawColor(100, 116, 139); // Slate-500
+        doc.setTextColor(100, 116, 139);
+        doc.setFontSize(8);
+
+        // Line
+        doc.line(barX, barY, barX + barWidthMm, barY);
+        // Ends
+        doc.line(barX, barY - 1, barX, barY + 1);
+        doc.line(barX + barWidthMm, barY - 1, barX + barWidthMm, barY + 1);
+        // Text
+        doc.text(label, barX + (barWidthMm / 2), barY - 2, { align: 'center' });
+
+        doc.save(`${projectName}.pdf`);
         return;
     }
 

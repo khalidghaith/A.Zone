@@ -67,7 +67,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [showApiKeySettings, setShowApiKeySettings] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
-    
+
     // Sorting & Grouping State
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'area' | 'zone'; direction: 'asc' | 'desc' }>({ key: 'zone', direction: 'asc' });
     const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set());
@@ -109,13 +109,13 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
         return sortedZones.map(zone => {
             const zoneRooms = groups[zone];
             const zoneTotalArea = zoneRooms.reduce((sum, r) => sum + r.area, 0);
-            
+
             if (sortConfig.key === 'name') {
                 zoneRooms.sort((a, b) => sortConfig.direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
             } else if (sortConfig.key === 'area') {
                 zoneRooms.sort((a, b) => sortConfig.direction === 'asc' ? a.area - b.area : b.area - a.area);
             }
-            
+
             return { zone, rooms: zoneRooms, totalArea: zoneTotalArea };
         });
     }, [rooms, searchQuery, sortConfig]);
@@ -170,7 +170,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
     };
 
     return (
-        <div className="h-full w-full bg-slate-50 dark:bg-dark-bg flex font-sans text-slate-900 dark:text-gray-100">
+        <div className="h-full w-full bg-slate-50 dark:bg-dark-bg flex font-sans text-slate-900 dark:text-gray-100 animate-in fade-in duration-500">
             <style>{`
                 input[type=number]::-webkit-inner-spin-button, 
                 input[type=number]::-webkit-outer-spin-button { 
@@ -188,9 +188,9 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                     <div className="flex items-center justify-between mb-4">
                         <div className="relative flex-1 max-w-xs">
                             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input 
-                                className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border rounded-lg text-xs font-medium focus:ring-2 focus:ring-orange-500 focus:outline-none shadow-sm dark:text-gray-200" 
-                                placeholder="Filter spaces..." 
+                            <input
+                                className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-dark-border rounded-lg text-xs font-medium focus:ring-2 focus:ring-orange-500 focus:outline-none shadow-sm dark:text-gray-200"
+                                placeholder="Filter spaces..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
@@ -252,7 +252,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                                 <td className="px-4 py-2">
                                                     <div className="flex items-center gap-2">
                                                         <div className={`w-2 h-2 rounded-full ${zoneColors[group.zone]?.bg || 'bg-slate-300'}`} />
-                                                        <input 
+                                                        <input
                                                             className="bg-transparent font-black text-xs text-slate-600 dark:text-gray-300 focus:outline-none focus:text-orange-600 uppercase tracking-wider w-full"
                                                             value={group.zone}
                                                             onChange={(e) => handleRenameZone(group.zone, e.target.value)}
@@ -273,7 +273,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                                                     </button>
                                                 </td>
                                             </tr>
-                                            
+
                                             {/* Space Rows */}
                                             {!collapsedZones.has(group.zone) && group.rooms.map((room, idx) => (
                                                 <tr key={room.id} className="group/row hover:bg-slate-50 dark:hover:bg-white/5">
@@ -364,7 +364,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                     <div>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Zone Distribution</h3>
-                            <button 
+                            <button
                                 onClick={() => {
                                     const name = prompt("Enter new zone name:");
                                     if (name) onAddZone(name);

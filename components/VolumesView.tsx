@@ -28,12 +28,13 @@ interface VolumesViewProps {
     };
     onViewStateChange: (updates: Partial<VolumesViewProps['viewState']>, incrementVersion?: boolean) => void;
     cameraVersion: number;
+    active: boolean;
+    floorGap: number;
 }
 
-const FLOOR_GAP = 4; // spacing between floors in 3D units (2 meters)
 const HEIGHT_SCALE = 2; // 1m = 2 units (consistent with horizontal scale of 20px/m / 10)
 
-function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onSelect, appSettings, diagramStyle, darkMode }: {
+function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onSelect, appSettings, diagramStyle, darkMode, floorGap }: {
     room: Room;
     floors: Floor[];
     zoneColors: Record<string, ZoneColor>;
@@ -43,6 +44,7 @@ function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onS
     appSettings: AppSettings;
     diagramStyle: DiagramStyle;
     darkMode: boolean;
+    floorGap: number;
 }) {
     const color = useMemo(() => {
         if (room.zone === 'Public') return '#fb923c';
@@ -65,11 +67,11 @@ function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onS
         const sortedFloors = [...floors].sort((a, b) => a.id - b.id);
         for (const f of sortedFloors) {
             if (f.id < room.floor) {
-                y += (f.height * HEIGHT_SCALE) + FLOOR_GAP;
+                y += (f.height * HEIGHT_SCALE) + floorGap;
             }
         }
         return y;
-    }, [floors, room.floor]);
+    }, [floors, room.floor, floorGap]);
 
     // Create Shape for Extrusion
     const shape = useMemo(() => {
@@ -198,17 +200,17 @@ function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onS
     );
 }
 
-function FloorPlane({ floor, floors, darkMode, gridSize }: { floor: Floor, floors: Floor[], darkMode: boolean, gridSize: number }) {
+function FloorPlane({ floor, floors, darkMode, gridSize, floorGap }: { floor: Floor, floors: Floor[], darkMode: boolean, gridSize: number, floorGap: number }) {
     const y = useMemo(() => {
         let totalY = 0;
         const sortedFloors = [...floors].sort((a, b) => a.id - b.id);
         for (const f of sortedFloors) {
             if (f.id < floor.id) {
-                totalY += (f.height * HEIGHT_SCALE) + FLOOR_GAP;
+                totalY += (f.height * HEIGHT_SCALE) + floorGap;
             }
         }
         return totalY;
-    }, [floors, floor.id]);
+    }, [floors, floor.id, floorGap]);
 
     // Only render grid for ground floor
     if (floor.id !== 0) return null;
@@ -232,7 +234,7 @@ function FloorPlane({ floor, floors, darkMode, gridSize }: { floor: Floor, floor
     );
 }
 
-function VerticalLink({ conn, rooms, floors, darkMode }: { conn: VerticalConnection; rooms: Room[]; floors: Floor[]; darkMode: boolean }) {
+function VerticalLink({ conn, rooms, floors, darkMode, floorGap }: { conn: VerticalConnection; rooms: Room[]; floors: Floor[]; darkMode: boolean; floorGap: number }) {
     const fromRoom = rooms.find(r => r.id === conn.fromId);
     const toRoom = rooms.find(r => r.id === conn.toId);
 
@@ -246,7 +248,7 @@ function VerticalLink({ conn, rooms, floors, darkMode }: { conn: VerticalConnect
         const sortedFloors = [...floors].sort((a, b) => a.id - b.id);
         for (const f of sortedFloors) {
             if (f.id < room.floor) {
-                yBase += (f.height * HEIGHT_SCALE) + FLOOR_GAP;
+                yBase += (f.height * HEIGHT_SCALE) + floorGap;
             }
         }
 
@@ -288,7 +290,7 @@ function VerticalLink({ conn, rooms, floors, darkMode }: { conn: VerticalConnect
 }
 
 // Camera control helper
-function CameraController({ zoomTrigger, placedRooms, floors, onFitComplete }: { zoomTrigger: number, placedRooms: Room[], floors: Floor[], onFitComplete?: (pos: THREE.Vector3, target: THREE.Vector3, zoom: number) => void }) {
+function CameraController({ zoomTrigger, placedRooms, floors, onFitComplete, floorGap }: { zoomTrigger: number, placedRooms: Room[], floors: Floor[], onFitComplete?: (pos: THREE.Vector3, target: THREE.Vector3, zoom: number) => void, floorGap: number }) {
     const { camera, controls, size } = useThree();
 
     useEffect(() => {
@@ -306,7 +308,7 @@ function CameraController({ zoomTrigger, placedRooms, floors, onFitComplete }: {
                 const sortedFloors = [...floors].sort((a, b) => a.id - b.id);
                 for (const f of sortedFloors) {
                     if (f.id < room.floor) {
-                        yBase += (f.height * HEIGHT_SCALE) + FLOOR_GAP;
+                        yBase += (f.height * HEIGHT_SCALE) + floorGap;
                     }
                 }
 
@@ -387,7 +389,7 @@ function CameraController({ zoomTrigger, placedRooms, floors, onFitComplete }: {
             onFitComplete(camera.position, center, camera.zoom);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [zoomTrigger]);
+    }, [zoomTrigger, floorGap]);
 
     return null;
 }
@@ -506,7 +508,7 @@ function CameraHandler({ viewState, onViewStateChange, isInteracting, cameraVers
 export function VolumesView({
     rooms, floors, verticalConnections, zoneColors, pixelsPerMeter,
     connectionSourceId, onLinkToggle, appSettings, diagramStyle,
-    selectedRoomIds, onRoomSelect, darkMode, gridSize,
+    selectedRoomIds, onRoomSelect, darkMode, gridSize, active, floorGap,
     viewState, onViewStateChange, cameraVersion
 }: VolumesViewProps) {
     const [zoomToFitTrigger, setZoomToFitTrigger] = useState(0);
@@ -596,6 +598,7 @@ export function VolumesView({
                 gl={{ antialias: true }}
                 orthographic={viewState.viewType === 'isometric'}
                 style={{ cursor: 'default' }}
+                frameloop={active ? 'always' : 'never'}
                 onPointerMissed={() => onRoomSelect(null, false)}
             >
                 {viewState.viewType === 'perspective' ? (
@@ -605,14 +608,14 @@ export function VolumesView({
                 )}
                 <OrbitControls key={viewState.viewType} makeDefault zoomToCursor enableDamping={false} />
                 <CameraHandler viewState={viewState} onViewStateChange={onViewStateChange} isInteracting={isInteracting} cameraVersion={cameraVersion} />
-                <CameraController zoomTrigger={zoomToFitTrigger} placedRooms={placedRooms} floors={floors} onFitComplete={handleFitComplete} />
+                <CameraController zoomTrigger={zoomToFitTrigger} placedRooms={placedRooms} floors={floors} onFitComplete={handleFitComplete} floorGap={floorGap} />
                 <ViewStateTracker onUpdate={handleCameraUpdate} isInteracting={isInteracting} />
                 <ambientLight intensity={0.7} />
                 <pointLight position={[200, 200, 500]} intensity={1.5} castShadow />
                 <directionalLight position={[-200, -200, 400]} intensity={0.8} />
 
                 {floors.map((floor) => (
-                    <FloorPlane key={floor.id} floor={floor} floors={floors} darkMode={darkMode} gridSize={gridSize} />
+                    <FloorPlane key={floor.id} floor={floor} floors={floors} darkMode={darkMode} gridSize={gridSize} floorGap={floorGap} />
                 ))}
 
                 {placedRooms.map(room => (
@@ -626,6 +629,7 @@ export function VolumesView({
                         appSettings={appSettings}
                         diagramStyle={diagramStyle}
                         darkMode={darkMode}
+                        floorGap={floorGap}
                         onSelect={() => {
                             if (connectionSourceId) {
                                 onLinkToggle(room.id);
@@ -637,7 +641,7 @@ export function VolumesView({
                 ))}
 
                 {verticalConnections.map(conn => (
-                    <VerticalLink key={conn.id} conn={conn} rooms={rooms} floors={floors} darkMode={darkMode} />
+                    <VerticalLink key={conn.id} conn={conn} rooms={rooms} floors={floors} darkMode={darkMode} floorGap={floorGap} />
                 ))}
 
                 <GizmoHelper alignment="bottom-right" margin={[80, 80]}>

@@ -160,6 +160,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
                 width: Math.sqrt(s.area) * 20,
                 height: Math.sqrt(s.area) * 20,
             }));
+            if (onInteractionStart) onInteractionStart();
             setRooms([...rooms, ...newRooms]);
             setShowAiModal(false);
         } catch (err: any) {

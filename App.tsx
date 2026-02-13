@@ -238,6 +238,9 @@ export default function App() {
     const handleVolumeRoomSelect = useCallback((id: string | null, multi: boolean) => {
         if (id === null) {
             setSelectedRoomIds(new Set());
+            setSelectedZone(null);
+            setSelectedAnnotationId(null);
+            setConnectionSourceId(null);
             return;
         }
         setSelectedRoomIds(prev => {
@@ -271,6 +274,7 @@ export default function App() {
     const [isInventoryHovered, setIsInventoryHovered] = useState(false);
     const [editingFloorId, setEditingFloorId] = useState<number | null>(null);
     const [hasInitialZoomed, setHasInitialZoomed] = useState(false);
+    const [floorGap, setFloorGap] = useState(4);
 
     const roomsRef = useRef(rooms);
     roomsRef.current = rooms;
@@ -607,6 +611,7 @@ export default function App() {
             if (e.target === e.currentTarget) {
                 setSelectedRoomIds(new Set());
                 setSelectedZone(null);
+                setSelectedAnnotationId(null);
                 if (connectionSourceId) setConnectionSourceId(null);
                 // Auto-lock all text when clicking empty space
                 setRooms(prev => prev.map(r => r.isTextUnlocked ? { ...r, isTextUnlocked: false } : r));
@@ -638,6 +643,7 @@ export default function App() {
                 // Clear selection if background
                 setSelectedRoomIds(new Set());
                 setSelectedZone(null);
+                setSelectedAnnotationId(null);
                 if (connectionSourceId) setConnectionSourceId(null);
             }
         } else if (e.touches.length === 2) {
@@ -1136,7 +1142,7 @@ export default function App() {
             next.delete(id);
             return next;
         });
-    }, []);
+    }, [addToHistory]);
 
     const addRoom = useCallback((roomData: Partial<Room>) => {
         addToHistory();
@@ -1155,7 +1161,7 @@ export default function App() {
             ...roomData
         };
         setRooms(prev => [...prev, newRoom]);
-    }, []);
+    }, [addToHistory]);
 
     const updateAnnotation = useCallback((id: string, updates: Partial<Annotation>) => {
         setAnnotations(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
@@ -1277,28 +1283,32 @@ export default function App() {
         localStorage.setItem('SOAP_GEMINI_KEY', key);
     };
 
-    const toggleLink = (roomId: string) => {
-        if (connectionSourceId === roomId) {
-            setConnectionSourceId(null);
-        } else if (connectionSourceId) {
-            const existing = connections.find(c =>
-                (c.fromId === connectionSourceId && c.toId === roomId) ||
-                (c.fromId === roomId && c.toId === connectionSourceId)
-            );
-            if (!existing) {
-                setConnections(prev => [...prev, {
-                    id: `conn-${Date.now()}`,
-                    fromId: connectionSourceId,
-                    toId: roomId
-                }]);
+    const toggleLink = useCallback((roomId: string) => {
+        setConnectionSourceId(currentSourceId => {
+            if (currentSourceId === roomId) {
+                return null;
+            } else if (currentSourceId) {
+                setConnections(prev => {
+                    const existing = prev.find(c =>
+                        (c.fromId === currentSourceId && c.toId === roomId) ||
+                        (c.fromId === roomId && c.toId === currentSourceId)
+                    );
+                    if (!existing) {
+                        return [...prev, {
+                            id: `conn-${Date.now()}`,
+                            fromId: currentSourceId,
+                            toId: roomId
+                        }];
+                    } else {
+                        return prev.filter(c => c.id !== existing.id);
+                    }
+                });
+                return null;
             } else {
-                setConnections(prev => prev.filter(c => c.id !== existing.id));
+                return roomId;
             }
-            setConnectionSourceId(null);
-        } else {
-            setConnectionSourceId(roomId);
-        }
-    };
+        });
+    }, []);
 
     // --- Zone Handlers ---
     const handleZoneDrag = useCallback((zone: string, dx: number, dy: number) => {
@@ -1320,7 +1330,7 @@ export default function App() {
         if (!newZone.trim()) return;
         setRooms(prev => prev.map(r => r.zone === oldZone ? { ...r, zone: newZone } : r));
         setSelectedZone(newZone);
-    }, []);
+    }, [addToHistory]);
 
     const handleBubbleDragEnd = useCallback((room: Room, e: MouseEvent) => {
         setIsBubbleDragging(false);
@@ -1676,7 +1686,6 @@ export default function App() {
                     className={`${isInventoryOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-r border-slate-200/50 dark:border-dark-border flex flex-col z-30 shadow-[10px_0_30px_rgba(0,0,0,0.02)] transition-all duration-300 ${isInventoryHovered ? 'ring-2 ring-orange-400 ring-inset bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
                     onDragOver={handleInventoryDragOver}
                     onDrop={handleInventoryDrop}
-                    style={{ visibility: viewMode === 'EDITOR' ? 'hidden' : 'visible' }}
                 >
                     {isInventoryOpen ? (
                                 <>
@@ -1759,8 +1768,7 @@ export default function App() {
                     onDrop={viewMode === 'VOLUMES' ? undefined : handleDrop}
                     style={{
                         touchAction: 'none',
-                        cursor: viewMode === 'VOLUMES' ? 'default' : (isSketchMode ? 'crosshair' : (isPanning ? 'grabbing' : 'default')),
-                        visibility: viewMode === 'EDITOR' ? 'hidden' : 'visible'
+                        cursor: viewMode === 'VOLUMES' ? 'default' : (isSketchMode ? 'crosshair' : (isPanning ? 'grabbing' : 'default'))
                     }}
                 >        {/* Reset selection if clicking background (unless panning) */}
                             {/* The onMouseDown handler above already handles this */}
@@ -1813,15 +1821,17 @@ export default function App() {
                                        onViewStateChange={handleViewStateChange}
                                        onRoomSelect={handleVolumeRoomSelect}
                                        cameraVersion={cameraVersion}
+                                       active={viewMode === 'VOLUMES'}
+                                       floorGap={floorGap}
                                    />
                                </ErrorBoundary>
                             </div>
                             <div style={{
                                 position: 'absolute',
                                 inset: 0,
-                                opacity: viewMode !== 'VOLUMES' ? 1 : 0,
-                                pointerEvents: viewMode !== 'VOLUMES' ? 'auto' : 'none',
-                                zIndex: viewMode !== 'VOLUMES' ? 10 : 0,
+                                opacity: viewMode === 'CANVAS' ? 1 : 0,
+                                pointerEvents: viewMode === 'CANVAS' ? 'auto' : 'none',
+                                zIndex: viewMode === 'CANVAS' ? 10 : 0,
                             }}>
                                 {/* Background Reference Images */}
                                     <div
@@ -2252,7 +2262,7 @@ export default function App() {
                     </div>
                 </main>
 
-                <aside className={`${isRightSidebarOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-l border-slate-200 dark:border-dark-border flex flex-col z-20 shadow-2xl transition-all duration-300`} style={{ visibility: viewMode === 'EDITOR' ? 'hidden' : 'visible' }}>
+                <aside className={`${isRightSidebarOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-l border-slate-200 dark:border-dark-border flex flex-col z-20 shadow-2xl transition-all duration-300`}>
                     {isRightSidebarOpen ? (
                                 <>
                                     <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/50 dark:bg-white/5 h-20">
@@ -2510,59 +2520,124 @@ export default function App() {
                                         ) : (
                                             <div className="space-y-8 animate-in fade-in duration-500">
                                                 {/* Floor Settings - Shown when nothing is selected */}
-                                                <div className="space-y-6">
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
-                                                            <Layers size={14} className="text-orange-600" />
-                                                        </div>
-                                                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-gray-300">Floor Settings</h3>
-                                                    </div>
-
-                                                    <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border space-y-4">
-                                                        <div>
-                                                            <label className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-1.5 block">Current Floor Label</label>
-                                                            <input
-                                                                className="w-full text-lg font-black text-slate-800 dark:text-gray-100 bg-transparent border-b border-dashed border-slate-300 dark:border-dark-border focus:border-orange-500 outline-none pb-1"
-                                                                value={floors.find(f => f.id === currentFloor)?.label || ""}
-                                                                onChange={(e) => handleUpdateFloor(currentFloor, { label: e.target.value })}
-                                                            />
-                                                        </div>
-
-                                                        <div>
-                                                            <div className="flex justify-between items-center mb-1.5">
-                                                                <label className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest block">Floor Height</label>
-                                                                <span className="text-[10px] font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-1.5 rounded">meters</span>
+                                                {viewMode === 'VOLUMES' ? (
+                                                    <div className="space-y-6">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
+                                                                <Box size={14} className="text-orange-600" />
                                                             </div>
-                                                            <div className="flex items-center gap-3">
+                                                            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-gray-300">Volumes Settings</h3>
+                                                        </div>
+
+                                                        <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border space-y-4">
+                                                            <div>
+                                                                <div className="flex justify-between items-center mb-1.5">
+                                                                    <label className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest block">Floor Gap</label>
+                                                                    <span className="text-[10px] font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-1.5 rounded">{(floorGap / 2).toFixed(1)}m</span>
+                                                                </div>
                                                                 <input
-                                                                    type="number"
-                                                                    step="0.1"
-                                                                    className="flex-1 text-2xl font-mono font-bold text-slate-700 dark:text-gray-200 bg-transparent outline-none"
-                                                                    value={floors.find(f => f.id === currentFloor)?.height || 3}
-                                                                    onChange={(e) => handleUpdateFloor(currentFloor, { height: parseFloat(e.target.value) || 0 })}
+                                                                    type="range"
+                                                                    min="0"
+                                                                    max="20"
+                                                                    step="0.5"
+                                                                    value={floorGap}
+                                                                    onChange={(e) => setFloorGap(parseFloat(e.target.value))}
+                                                                    className="w-full accent-orange-500 h-1 bg-slate-200 dark:bg-dark-border rounded-lg appearance-none cursor-pointer"
                                                                 />
-                                                                <div className="flex flex-col gap-1">
-                                                                    <button
-                                                                        onClick={() => handleUpdateFloor(currentFloor, { height: (floors.find(f => f.id === currentFloor)?.height || 3) + 0.1 })}
-                                                                        className="p-1 hover:bg-white dark:hover:bg-white/10 rounded shadow-sm border border-slate-200 dark:border-dark-border text-slate-400 hover:text-orange-600"
-                                                                    >
-                                                                        <ChevronUp size={14} />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleUpdateFloor(currentFloor, { height: Math.max(0, (floors.find(f => f.id === currentFloor)?.height || 3) - 0.1) })}
-                                                                        className="p-1 hover:bg-white dark:hover:bg-white/10 rounded shadow-sm border border-slate-200 dark:border-dark-border text-slate-400 hover:text-orange-600"
-                                                                    >
-                                                                        <ChevronDown size={14} />
-                                                                    </button>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-3">
+                                                            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-gray-500 px-1">Floors Configuration</h3>
+                                                            {floors.map(floor => {
+                                                                const floorRooms = rooms.filter(r => r.floor === floor.id && r.isPlaced);
+                                                                const floorArea = floorRooms.reduce((acc, r) => acc + r.area, 0);
+                                                                
+                                                                return (
+                                                                    <div key={floor.id} className="p-4 bg-white dark:bg-dark-bg border border-slate-100 dark:border-dark-border rounded-xl space-y-3">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="text-xs font-bold text-slate-700 dark:text-gray-200">{floor.label}</span>
+                                                                            <span className="text-[10px] font-mono text-slate-400">{floorRooms.length} Spaces</span>
+                                                                        </div>
+                                                                        
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div className="flex-1">
+                                                                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Height (m)</label>
+                                                                                <input
+                                                                                    type="number"
+                                                                                    step="0.1"
+                                                                                    className="w-full bg-slate-50 dark:bg-white/5 border-none rounded-lg px-2 py-1 text-xs font-bold text-slate-700 dark:text-gray-200 focus:ring-1 focus:ring-orange-500 outline-none"
+                                                                                    value={floor.height}
+                                                                                    onChange={(e) => handleUpdateFloor(floor.id, { height: parseFloat(e.target.value) || 0 })}
+                                                                                />
+                                                                            </div>
+                                                                            <div className="flex-1">
+                                                                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total Area</label>
+                                                                                <div className="px-2 py-1 text-xs font-bold text-slate-500 dark:text-gray-400">
+                                                                                    {Math.round(floorArea)} m²
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-6">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
+                                                                <Layers size={14} className="text-orange-600" />
+                                                            </div>
+                                                            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-gray-300">Floor Settings</h3>
+                                                        </div>
+
+                                                        <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border space-y-4">
+                                                            <div>
+                                                                <label className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-1.5 block">Current Floor Label</label>
+                                                                <input
+                                                                    className="w-full text-lg font-black text-slate-800 dark:text-gray-100 bg-transparent border-b border-dashed border-slate-300 dark:border-dark-border focus:border-orange-500 outline-none pb-1"
+                                                                    value={floors.find(f => f.id === currentFloor)?.label || ""}
+                                                                    onChange={(e) => handleUpdateFloor(currentFloor, { label: e.target.value })}
+                                                                />
+                                                            </div>
+
+                                                            <div>
+                                                                <div className="flex justify-between items-center mb-1.5">
+                                                                    <label className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest block">Floor Height</label>
+                                                                    <span className="text-[10px] font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-1.5 rounded">meters</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <input
+                                                                        type="number"
+                                                                        step="0.1"
+                                                                        className="flex-1 text-2xl font-mono font-bold text-slate-700 dark:text-gray-200 bg-transparent outline-none"
+                                                                        value={floors.find(f => f.id === currentFloor)?.height || 3}
+                                                                        onChange={(e) => handleUpdateFloor(currentFloor, { height: parseFloat(e.target.value) || 0 })}
+                                                                    />
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <button
+                                                                            onClick={() => handleUpdateFloor(currentFloor, { height: (floors.find(f => f.id === currentFloor)?.height || 3) + 0.1 })}
+                                                                            className="p-1 hover:bg-white dark:hover:bg-white/10 rounded shadow-sm border border-slate-200 dark:border-dark-border text-slate-400 hover:text-orange-600"
+                                                                        >
+                                                                            <ChevronUp size={14} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleUpdateFloor(currentFloor, { height: Math.max(0, (floors.find(f => f.id === currentFloor)?.height || 3) - 0.1) })}
+                                                                            className="p-1 hover:bg-white dark:hover:bg-white/10 rounded shadow-sm border border-slate-200 dark:border-dark-border text-slate-400 hover:text-orange-600"
+                                                                        >
+                                                                            <ChevronDown size={14} />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    </div>
 
-                                                    <p className="text-[9px] text-slate-400 dark:text-gray-600 leading-relaxed px-2 italic">
-                                                        Changing the height affects 3D extrusions and spatial stacking for all spaces on this floor.
-                                                    </p>
-                                                </div>
+                                                        <p className="text-[9px] text-slate-400 dark:text-gray-600 leading-relaxed px-2 italic">
+                                                            Changing the height affects 3D extrusions and spatial stacking for all spaces on this floor.
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>

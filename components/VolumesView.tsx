@@ -32,6 +32,8 @@ interface VolumesViewProps {
     active: boolean;
     floorGap: number;
     hiddenFloorIds: Set<number>;
+    showLabels: boolean;
+    labelFontSize: number;
 }
 
 export interface VolumesViewHandle {
@@ -41,7 +43,7 @@ export interface VolumesViewHandle {
 
 const HEIGHT_SCALE = 2; // 1m = 2 units (consistent with horizontal scale of 20px/m / 10)
 
-function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onSelect, appSettings, diagramStyle, darkMode, floorGap }: {
+function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onSelect, appSettings, diagramStyle, darkMode, floorGap, showLabels, labelFontSize }: {
     room: Room;
     floors: Floor[];
     zoneColors: Record<string, ZoneColor>;
@@ -52,6 +54,8 @@ function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onS
     diagramStyle: DiagramStyle;
     darkMode: boolean;
     floorGap: number;
+    showLabels: boolean;
+    labelFontSize: number;
 }) {
     const color = useMemo(() => {
         const style = zoneColors[room.zone];
@@ -181,7 +185,8 @@ function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onS
             </mesh>
 
             {/* Projected Label - Billboard Style */}
-            <Html
+            {showLabels && (
+                <Html
                 position={[centroid.x / 10, -centroid.y / 10, heightIn3D + 2]}
                 center
                 pointerEvents="none"
@@ -190,7 +195,7 @@ function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onS
                     className={`flex flex-col items-center justify-center text-center select-none ${diagramStyle.fontFamily}`}
                     style={{
                         color: isSelected ? '#f97316' : darkMode ? '#fff' : '#000',
-                        fontSize: '11px',
+                        fontSize: `${labelFontSize}px`,
                         fontWeight: 'bold',
                         minWidth: '80px',
                         filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.4))',
@@ -203,9 +208,10 @@ function RoomVolume({ room, floors, zoneColors, isSelected, isLinkingSource, onS
                     }}
                 >
                     <div className="leading-tight whitespace-nowrap">{room.name}</div>
-                    <div className="text-[9px] opacity-80 font-mono tracking-tighter mt-0.5">{Math.round(room.area)}m²</div>
+                    <div className="text-[0.8em] opacity-80 font-mono tracking-tighter mt-0.5">{Math.round(room.area)}m²</div>
                 </div>
             </Html>
+            )}
         </group>
     );
 }
@@ -567,7 +573,7 @@ const SceneManager = forwardRef<VolumesViewHandle, { hiddenFloorIds: Set<number>
 export const VolumesView = forwardRef<VolumesViewHandle, VolumesViewProps>(({
     rooms, floors, verticalConnections, zoneColors, pixelsPerMeter,
     connectionSourceId, onLinkToggle, appSettings, diagramStyle,
-    selectedRoomIds, onRoomSelect, darkMode, gridSize, active, floorGap, hiddenFloorIds,
+    selectedRoomIds, onRoomSelect, darkMode, gridSize, active, floorGap, hiddenFloorIds, showLabels, labelFontSize,
     viewState, onViewStateChange, cameraVersion
 }: VolumesViewProps, ref) => {
     const [zoomToFitTrigger, setZoomToFitTrigger] = useState(0);
@@ -703,6 +709,8 @@ export const VolumesView = forwardRef<VolumesViewHandle, VolumesViewProps>(({
                                 onRoomSelect(room.id, false);
                             }
                         }}
+                        showLabels={showLabels}
+                        labelFontSize={labelFontSize}
                     />
                 ))}
 

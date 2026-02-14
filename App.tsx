@@ -14,7 +14,7 @@ import { arrangeRooms } from './utils/layout';
 import {
     Plus, Package, Download, Upload, Settings2, Undo2, Redo2, RotateCcw,
     TableProperties, Hexagon, Circle, Square,
-    LandPlot, ChevronRight, ChevronLeft, Key, X, Settings, LayoutTemplate, Sparkles, Trash2, Lock, Unlock, BrushCleaning,
+    PencilRuler, ChevronRight, ChevronLeft, Key, X, Settings, LayoutTemplate, Sparkles, Trash2, Lock, Unlock, BrushCleaning,
     Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom, FileImage, Image as ImageIcon, Scaling, Box, Layers, Save,
     Eye, EyeOff
 } from 'lucide-react';
@@ -310,6 +310,8 @@ export default function App() {
     const [hasInitialZoomed, setHasInitialZoomed] = useState(false);
     const [floorGap, setFloorGap] = useState(4);
     const [hiddenFloorIds, setHiddenFloorIds] = useState<Set<number>>(new Set());
+    const [showVolumeLabels, setShowVolumeLabels] = useState(true);
+    const [volumeLabelFontSize, setVolumeLabelFontSize] = useState(11);
 
     const roomsRef = useRef(rooms);
     roomsRef.current = rooms;
@@ -1858,7 +1860,7 @@ export default function App() {
                             onClick={() => setViewMode('CANVAS')}
                             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${viewMode === 'CANVAS' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
                         >
-                            <LandPlot size={14} /> Canvas
+                            <PencilRuler size={14} /> Canvas
                         </button>
                         <button
                             onClick={() => setViewMode('VOLUMES')}
@@ -2051,6 +2053,8 @@ export default function App() {
                                        active={viewMode === 'VOLUMES'}
                                        floorGap={floorGap}
                                        hiddenFloorIds={hiddenFloorIds}
+                                       showLabels={showVolumeLabels}
+                                       labelFontSize={volumeLabelFontSize}
                                    />
                                </ErrorBoundary>
                             </div>
@@ -2873,13 +2877,43 @@ export default function App() {
                                                                 <input
                                                                     type="range"
                                                                     min="0"
-                                                                    max="20"
+                                                                    max="40"
                                                                     step="0.5"
                                                                     value={floorGap}
                                                                     onChange={(e) => setFloorGap(parseFloat(e.target.value))}
                                                                     className="w-full accent-orange-500 h-1 bg-slate-200 dark:bg-dark-border rounded-lg appearance-none cursor-pointer"
                                                                 />
                                                             </div>
+                                                        </div>
+
+                                                        <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-dark-border space-y-4">
+                                                            <div className="flex items-center justify-between">
+                                                                <label className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest">Show Labels</label>
+                                                                <button
+                                                                    onClick={() => setShowVolumeLabels(!showVolumeLabels)}
+                                                                    className={`w-8 h-5 rounded-full relative transition-colors ${showVolumeLabels ? 'bg-orange-500' : 'bg-slate-300 dark:bg-white/10'}`}
+                                                                >
+                                                                    <div className={`absolute top-1 w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${showVolumeLabels ? 'left-4' : 'left-1'}`} />
+                                                                </button>
+                                                            </div>
+
+                                                            {showVolumeLabels && (
+                                                                <div>
+                                                                    <div className="flex justify-between items-center mb-1.5">
+                                                                        <label className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest block">Label Size</label>
+                                                                        <span className="text-[10px] font-bold text-slate-600 dark:text-gray-300">{volumeLabelFontSize}px</span>
+                                                                    </div>
+                                                                    <input
+                                                                        type="range"
+                                                                        min="4"
+                                                                        max="24"
+                                                                        step="1"
+                                                                        value={volumeLabelFontSize}
+                                                                        onChange={(e) => setVolumeLabelFontSize(parseFloat(e.target.value))}
+                                                                        className="w-full accent-orange-500 h-1 bg-slate-200 dark:bg-dark-border rounded-lg appearance-none cursor-pointer"
+                                                                    />
+                                                                </div>
+                                                            )}
                                                         </div>
 
                                                         <div className="space-y-3">

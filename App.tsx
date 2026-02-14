@@ -1801,10 +1801,10 @@ export default function App() {
                 }
             `}</style>
             {/* Premium Header */}
-            <header className="py-[5px] bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between px-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] relative transition-colors duration-300">
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 group cursor-pointer">
-                        <img src={SoapLogo} className="w-8 h-8 rounded-lg group-hover:scale-105" alt="SOAP" />
+            <header className="h-[42px] bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between pr-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] relative transition-colors duration-300">
+                <div className="flex items-center gap-4 h-full">
+                    <div className="flex items-center gap-3 group cursor-pointer h-full">
+                        <img src={SoapLogo} className="w-[42px] h-[42px] object-cover" alt="SOAP" />
                         <div>
                             <input className="font-black text-slate-900 dark:text-gray-100 tracking-tight leading-none bg-transparent border-none focus:outline-none focus:ring-0 w-full p-0 text-sm" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
                             <p className="text-[9px] font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest">SOAP Project</p>

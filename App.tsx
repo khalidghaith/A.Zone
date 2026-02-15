@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Room, FLOORS, Connection, DIAGRAM_STYLES, DiagramStyle, Point, ZONE_COLORS, AppSettings, ZoneColor, Floor, VerticalConnection } from './types';
 import { ProgramEditor } from './components/ProgramEditor';
 import { Bubble } from './components/Bubble';
+import { HelpModal } from './components/HelpModal';
+import { AboutModal } from './components/AboutModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { ZoneOverlay } from './components/ZoneOverlay'; // Newly added
 import { ExportModal } from './components/ExportModal';
@@ -16,7 +18,7 @@ import {
     TableProperties, Hexagon, Circle, Square,
     PencilRuler, ChevronRight, ChevronLeft, Key, X, Settings, LayoutTemplate, Sparkles, Trash2, Lock, Unlock, BrushCleaning,
     Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom, FileImage, Image as ImageIcon, Scaling, Box, Layers, Save,
-    Eye, EyeOff
+    Eye, EyeOff, CircleHelp, Info
 } from 'lucide-react';
 import { Annotation, AnnotationType, ArrowCapType, ReferenceImage, ReferenceScaleState } from './types';
 import { SketchToolbar, SketchPanel } from './components/SketchToolbar';
@@ -175,6 +177,8 @@ export default function App() {
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('SOAP_GEMINI_KEY') || import.meta.env.VITE_GEMINI_API_KEY || "");
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
+    const [showHelpModal, setShowHelpModal] = useState(false);
+    const [showAboutModal, setShowAboutModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [isAiLayoutLoading, setIsAiLayoutLoading] = useState(false);
 
@@ -1829,6 +1833,12 @@ export default function App() {
                         <button onClick={() => setShowSettingsModal(true)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-white/5" title="Settings">
                             <Settings size={14} />
                         </button>
+                        <button onClick={() => setShowHelpModal(true)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-white/5" title="Help">
+                            <CircleHelp size={14} />
+                        </button>
+                        <button onClick={() => setShowAboutModal(true)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-white/5" title="About">
+                            <Info size={14} />
+                        </button>
                     </div>
 
                     <div className="h-6 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
@@ -3060,6 +3070,23 @@ export default function App() {
                         settings={appSettings}
                         onUpdate={setAppSettings}
                         onClose={() => setShowSettingsModal(false)}
+                    />
+                )
+            }
+
+            {
+                showHelpModal && (
+                    <HelpModal
+                        isOpen={showHelpModal}
+                        onClose={() => setShowHelpModal(false)}
+                    />
+                )
+            }
+
+            {
+                showAboutModal && (
+                    <AboutModal
+                        onClose={() => setShowAboutModal(false)}
                     />
                 )
             }

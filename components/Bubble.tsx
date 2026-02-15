@@ -1043,13 +1043,42 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                             {/* Polygon Edges (Hit Areas for Editing) */}
                             {isSelected && activePoints.map((p, i) => {
                                 const next = activePoints[(i + 1) % activePoints.length];
+                                
+                                if (room.shape === 'bubble') {
+                                    const p0 = activePoints[(i - 1 + activePoints.length) % activePoints.length];
+                                    const p1 = p;
+                                    const p2 = next;
+                                    const p3 = activePoints[(i + 2) % activePoints.length];
+
+                                    const cp1x = p1.x + (p2.x - p0.x) / 6;
+                                    const cp1y = p1.y + (p2.y - p0.y) / 6;
+                                    const cp2x = p2.x - (p3.x - p1.x) / 6;
+                                    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+                                    const d = `M ${p1.x},${p1.y} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+
+                                    return (
+                                        <path
+                                            key={`edge-${i}`}
+                                            d={d}
+                                            stroke="rgba(0,0,0,0)"
+                                            strokeWidth={12 / zoomScale}
+                                            fill="none"
+                                            className="cursor-move hover:stroke-orange-600/50 pointer-events-auto transition-colors duration-75"
+                                            onMouseEnter={() => setHoveredEdge(i)}
+                                            onMouseLeave={() => setHoveredEdge(null)}
+                                            onMouseDown={(e) => handleEdgeDown(e, i)}
+                                        />
+                                    );
+                                }
+
                                 return (
                                     <line
                                         key={`edge-${i}`}
                                         x1={p.x} y1={p.y} x2={next.x} y2={next.y}
-                                        stroke="transparent"
-                                        strokeWidth={10 / zoomScale}
-                                        className="cursor-move hover:stroke-orange-600/20 pointer-events-auto"
+                                        stroke="rgba(0,0,0,0)"
+                                        strokeWidth={12 / zoomScale}
+                                        className="cursor-move hover:stroke-orange-600/50 pointer-events-auto transition-colors duration-75"
                                         onMouseEnter={() => setHoveredEdge(i)}
                                         onMouseLeave={() => setHoveredEdge(null)}
                                         onMouseDown={(e) => handleEdgeDown(e, i)}
@@ -1185,7 +1214,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                 {/* Content */}
                 <div
-                    className={`absolute flex flex-col items-center justify-center ${room.isTextUnlocked ? 'pointer-events-auto cursor-move' : 'pointer-events-auto'}`}
+                    className="absolute flex flex-col items-center justify-center pointer-events-none"
                     style={{
                         left: textPos.x - bounds.width / 2,
                         top: textPos.y - bounds.height / 2,
@@ -1207,7 +1236,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                                 MozHyphens: 'auto',
                                 msHyphens: 'auto'
                             }}
-                            className={`flex flex-col items-center w-full px-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily} leading-tight select-none pointer-events-none`}
+                            className={`flex flex-col items-center w-full px-2 text-center ${visualStyle.text} ${diagramStyle.fontFamily} leading-tight select-none ${room.isTextUnlocked ? 'pointer-events-auto cursor-move' : 'pointer-events-auto'}`}
                         >
                             <div className="font-bold w-full">
                                 {wrappedNameLines.map((line, i) => (

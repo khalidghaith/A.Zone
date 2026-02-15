@@ -39,12 +39,13 @@ interface ZoneOverlayProps {
     onZoneDrag: (zone: string, dx: number, dy: number) => void;
     onSelectZone?: (zone: string) => void;
     onDragStart?: () => void;
-    onDragEnd?: (e: MouseEvent) => void;
+    onDragEnd?: (e: any) => void;
     appSettings: AppSettings;
     zoneColors: Record<string, ZoneColor>;
+    selectedZone: string | null;
 }
 
-export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, scale, onZoneDrag, onSelectZone, onDragStart, onDragEnd, appSettings, zoneColors }) => {
+export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, scale, onZoneDrag, onSelectZone, onDragStart, onDragEnd, appSettings, zoneColors, selectedZone }) => {
     const [draggedZone, setDraggedZone] = useState<string | null>(null);
     const lastMousePos = useRef<{ x: number, y: number } | null>(null);
 
@@ -119,10 +120,10 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
                 color: zoneColors[zone] || zoneColors['Default']
             };
         }).filter(Boolean);
-    }, [rooms, currentFloor, scale, appSettings.cornerRadius, appSettings.zonePadding, zoneColors]);
+    }, [rooms, currentFloor, scale, appSettings.cornerRadius, appSettings.zonePadding, zoneColors, selectedZone]);
 
     useEffect(() => {
-        const handleMouseMove = (e: MouseEvent) => {
+        const handlePointerMove = (e: PointerEvent) => {
             if (draggedZone && lastMousePos.current) {
                 const dx = (e.clientX - lastMousePos.current.x) / scale;
                 const dy = (e.clientY - lastMousePos.current.y) / scale;
@@ -131,25 +132,37 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
             }
         };
 
-        const handleMouseUp = (e: MouseEvent) => {
+        const handlePointerUp = (e: PointerEvent) => {
             if (draggedZone) onDragEnd?.(e);
             setDraggedZone(null);
             lastMousePos.current = null;
         };
 
         if (draggedZone) {
-            window.addEventListener('mousemove', handleMouseMove);
-            window.addEventListener('mouseup', handleMouseUp);
+            window.addEventListener('pointermove', handlePointerMove);
+            window.addEventListener('pointerup', handlePointerUp);
+            window.addEventListener('pointercancel', handlePointerUp);
         }
 
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
         };
-    }, [draggedZone, scale, onZoneDrag]);
+    }, [draggedZone, scale, onZoneDrag, onDragEnd]);
 
-    const handleZoneMouseDown = (e: React.MouseEvent, zone: string) => {
+    const handleZonePointerDown = (e: React.PointerEvent, zone: string) => {
         e.stopPropagation(); // Prevent canvas panning
+        e.preventDefault();
+
+        const isSelected = selectedZone === zone;
+
+        // Touch optimization: Select first, then drag
+        if (e.pointerType === 'touch' && !isSelected) {
+            if (onSelectZone) onSelectZone(zone);
+            return;
+        }
+
         setDraggedZone(zone);
         lastMousePos.current = { x: e.clientX, y: e.clientY };
         onDragStart?.();
@@ -158,29 +171,32 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ rooms, currentFloor, s
 
     return (
         <svg className="absolute inset-0 overflow-visible pointer-events-none z-10">
-            {zonePaths.map((z: any) => (
-                <g key={z.zone} className="">
-                    {/* Stroke */}
-                    <path
-                        d={z.path}
-                        className={`${z.color.border.replace('border-', 'stroke-')} opacity-60`}
-                        strokeWidth={appSettings.strokeWidth / scale}
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                        strokeDasharray={`${10 / scale}, ${10 / scale}`}
-                        fill="none"
-                    />
-                    {/* Interactive Fill */}
-                    <path
-                        d={z.path}
-                        className={`${z.color.bg.replace('bg-', 'fill-')} hover:opacity-60 cursor-pointer active:cursor-grabbing pointer-events-auto`}
-                        style={{ fillOpacity: appSettings.zoneTransparency }}
-                        stroke="none"
-                        fill="transparent"
-                        onMouseDown={(e) => handleZoneMouseDown(e, z.zone)}
-                    />
-                </g>
-            ))}
+            {zonePaths.map((z: any) => {
+                const isSelected = selectedZone === z.zone;
+                return (
+                    <g key={z.zone} className="">
+                        {/* Stroke */}
+                        <path
+                            d={z.path}
+                            className={`${z.color.border.replace('border-', 'stroke-')} ${isSelected ? 'opacity-100' : 'opacity-60'} transition-opacity duration-200`}
+                            strokeWidth={(isSelected ? appSettings.strokeWidth * 2 : appSettings.strokeWidth) / scale}
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                            strokeDasharray={isSelected ? 'none' : `${10 / scale}, ${10 / scale}`}
+                            fill="none"
+                        />
+                        {/* Interactive Fill */}
+                        <path
+                            d={z.path}
+                            className={`${z.color.bg.replace('bg-', 'fill-')} hover:opacity-60 cursor-pointer active:cursor-grabbing pointer-events-auto`}
+                            style={{ fillOpacity: appSettings.zoneTransparency, touchAction: 'none' }}
+                            stroke="none"
+                            fill="transparent"
+                            onPointerDown={(e) => handleZonePointerDown(e, z.zone)}
+                        />
+                    </g>
+                );
+            })}
         </svg>
     );
 };

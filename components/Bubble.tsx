@@ -24,7 +24,7 @@ interface BubbleProps {
     floors: { id: number; label: string }[];
     appSettings: AppSettings;
     zoneColors: Record<string, ZoneColor>;
-    onDragEnd?: (room: Room, e: MouseEvent) => void;
+    onDragEnd?: (room: Room, e: any) => void;
     otherRooms?: Room[];
     isSketchMode?: boolean;
     isOverlay?: boolean;
@@ -153,6 +153,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const [selectedVertices, setSelectedVertices] = useState<Set<number>>(new Set());
     const hasMoved = useRef(false);
 
+    const lastEdgeClick = useRef<{ time: number, index: number } | null>(null);
     const bubbleRef = useRef<HTMLDivElement>(null);
     const startDragState = useRef({
         startX: 0, startY: 0,
@@ -777,10 +778,12 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         if (isDragging || isRotating || resizeHandle || draggedVertex !== null || draggedEdge !== null || isTextDragging) {
             window.addEventListener('pointermove', handlePointerMove);
             window.addEventListener('pointerup', handlePointerUp);
+            window.addEventListener('pointercancel', handlePointerUp);
         }
         return () => {
             window.removeEventListener('pointermove', handlePointerMove);
             window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
         };
     }, [isDragging, isRotating, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, isTextDragging, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition, onDragEnd, onMove, isSelected, onSelect, otherRooms, appSettings.snapToObjects, appSettings.snapTolerance, appSettings.snapToGrid, room.x, room.y, room.shape, room.area, pixelsPerMeter]);
 
@@ -920,11 +923,19 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         e.preventDefault();
         onDragStart?.();
 
+        // Manual Double Click Detection (PointerEvent.detail can be unreliable with preventDefault on some devices)
+        const now = Date.now();
+        const isDouble = lastEdgeClick.current && 
+                         (now - lastEdgeClick.current.time < 300) && 
+                         lastEdgeClick.current.index === index;
+        lastEdgeClick.current = { time: now, index };
+
         // Clear vertex selection when starting to drag an edge
         if (selectedVertices.size > 0) setSelectedVertices(new Set());
 
         // Double Click Check: Insert Vertex
-        if (e.detail === 2) {
+        if (isDouble || e.detail === 2) {
+            lastEdgeClick.current = null; // Reset to prevent triple-click issues
             if (!bubbleRef.current) return;
 
             // Step A: Insert the new point at the exact midpoint of the curve/edge segment.

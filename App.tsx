@@ -598,15 +598,15 @@ export default function App() {
             return;
         }
 
-        const handleGlobalMouseMove = (e: MouseEvent) => {
+        const handleGlobalPointerMove = (e: PointerEvent) => {
             if (inventoryRef.current) {
                 const rect = inventoryRef.current.getBoundingClientRect();
                 const isOver = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
                 setIsInventoryHovered(isOver);
             }
         };
-        window.addEventListener('mousemove', handleGlobalMouseMove);
-        return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
+        window.addEventListener('pointermove', handleGlobalPointerMove);
+        return () => window.removeEventListener('pointermove', handleGlobalPointerMove);
     }, [isZoneDragging, isBubbleDragging]);
 
     // --- Core Handlers ---
@@ -1452,7 +1452,7 @@ export default function App() {
         setSelectedZone(newZone);
     }, [addToHistory]);
 
-    const handleBubbleDragEnd = useCallback((room: Room, e: MouseEvent) => {
+    const handleBubbleDragEnd = useCallback((room: Room, e: any) => {
         setIsBubbleDragging(false);
         if (!room || !e) return;
 
@@ -1475,7 +1475,7 @@ export default function App() {
         }
     }, [updateRoom, selectedRoomIds]);
 
-    const handleZoneDragEnd = useCallback((e: MouseEvent) => {
+    const handleZoneDragEnd = useCallback((e: any) => {
         setIsZoneDragging(false);
         if (selectedZone && inventoryRef.current) {
             const rect = inventoryRef.current.getBoundingClientRect();
@@ -2176,6 +2176,7 @@ export default function App() {
                                             onDragEnd={handleZoneDragEnd}
                                             appSettings={appSettings}
                                             zoneColors={zoneColors}
+                                            selectedZone={selectedZone}
                                         />
                                     </div>
 

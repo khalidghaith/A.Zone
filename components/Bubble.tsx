@@ -799,6 +799,13 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     const handleMouseDown = (e: React.PointerEvent) => {
         e.stopPropagation();
         e.preventDefault();
+
+        // Touch optimization: Select first, then drag
+        if (e.pointerType === 'touch' && !isSelected) {
+            onSelect(room.id, false);
+            return;
+        }
+
         // Clear vertex selection if clicking on room body, UNLESS holding ctrl? 
         // Usually clicking body selects room, so handling vertices should be distinct.
         // User wants to move "them" (vertices).

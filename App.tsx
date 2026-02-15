@@ -18,7 +18,7 @@ import {
     TableProperties, Hexagon, Circle, Square,
     PencilRuler, ChevronRight, ChevronLeft, Key, X, Settings, LayoutTemplate, Sparkles, Trash2, Lock, Unlock, BrushCleaning,
     Link, Magnet, Grid, Moon, Sun, Maximize, ChevronUp, ChevronDown, Atom, FileImage, Image as ImageIcon, Scaling, Box, Layers, Save,
-    Eye, EyeOff, CircleHelp, Info
+    Eye, EyeOff, CircleHelp, Info, Menu, MoreHorizontal
 } from 'lucide-react';
 import { Annotation, AnnotationType, ArrowCapType, ReferenceImage, ReferenceScaleState } from './types';
 import { SketchToolbar, SketchPanel } from './components/SketchToolbar';
@@ -180,6 +180,8 @@ export default function App() {
     const [showHelpModal, setShowHelpModal] = useState(false);
     const [showAboutModal, setShowAboutModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isToolbarExpanded, setIsToolbarExpanded] = useState(false);
     const [isAiLayoutLoading, setIsAiLayoutLoading] = useState(false);
 
     // Sketch State
@@ -1815,7 +1817,7 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="hidden lg:flex items-center gap-1">
                         <button
                             onClick={() => setDarkMode(!darkMode)}
                             className={`w-8 h-8 rounded-lg flex items-center justify-center ${!darkMode ? 'text-slate-400 hover:text-orange-500 hover:bg-orange-50' : 'text-slate-400 hover:text-orange-400 hover:bg-white/5'}`}
@@ -1841,9 +1843,9 @@ export default function App() {
                         </button>
                     </div>
 
-                    <div className="h-6 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
+                    <div className="hidden lg:block h-6 w-px bg-slate-200/60 dark:bg-dark-border mx-1" />
 
-                    <div className="flex items-center gap-1">
+                    <div className="hidden lg:flex items-center gap-1">
                         <button onClick={undo} disabled={history.length === 0} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-30" title="Undo (Ctrl+Z)">
                             <Undo2 size={14} />
                         </button>
@@ -1855,6 +1857,14 @@ export default function App() {
                             <RotateCcw size={14} />
                         </button>
                     </div>
+
+                    {/* Mobile Menu Button */}
+                    <button
+                        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                        className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-50 dark:hover:bg-white/5"
+                    >
+                        {isMobileMenuOpen ? <X size={16} /> : <Menu size={16} />}
+                    </button>
                 </div>
 
                 {/* Workspace Toggle - Centered */}
@@ -1864,19 +1874,19 @@ export default function App() {
                             onClick={() => setViewMode('EDITOR')}
                             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${viewMode === 'EDITOR' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
                         >
-                            <TableProperties size={14} /> Program
+                            <TableProperties size={14} /> <span className="hidden lg:inline">Program</span>
                         </button>
                         <button
                             onClick={() => setViewMode('CANVAS')}
                             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${viewMode === 'CANVAS' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
                         >
-                            <PencilRuler size={14} /> Canvas
+                            <PencilRuler size={14} /> <span className="hidden lg:inline">Canvas</span>
                         </button>
                         <button
                             onClick={() => setViewMode('VOLUMES')}
                             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${viewMode === 'VOLUMES' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-200 hover:bg-slate-200/50 dark:hover:bg-white/10'}`}
                         >
-                            <Box size={14} /> Volumes
+                            <Box size={14} /> <span className="hidden lg:inline">Volumes</span>
                         </button>
                     </div>
                 </div>
@@ -1895,6 +1905,56 @@ export default function App() {
                         </label>
                     </div>
                 </div>
+
+                {/* Mobile Menu Overlay */}
+                {isMobileMenuOpen && (
+                    <div className="absolute top-[42px] left-0 right-0 bg-white dark:bg-dark-surface border-b border-slate-200 dark:border-dark-border p-4 flex flex-col gap-4 z-50 shadow-xl lg:hidden animate-in slide-in-from-top-2">
+                        <div className="grid grid-cols-5 gap-2">
+                            <button
+                                onClick={() => { setDarkMode(!darkMode); setIsMobileMenuOpen(false); }}
+                                className={`h-10 rounded-xl flex items-center justify-center ${!darkMode ? 'bg-slate-100 text-slate-600' : 'bg-white/5 text-slate-300'}`}
+                            >
+                                {darkMode ? <Moon size={16} /> : <Sun size={16} />}
+                            </button>
+                            <button
+                                onClick={() => { setShowApiKeyModal(true); setIsMobileMenuOpen(false); }}
+                                className={`h-10 rounded-xl flex items-center justify-center ${apiKey ? 'bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300' : 'bg-orange-50 text-orange-600 border border-orange-200'}`}
+                            >
+                                <Key size={16} />
+                            </button>
+                            <button
+                                onClick={() => { setShowSettingsModal(true); setIsMobileMenuOpen(false); }}
+                                className="h-10 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300"
+                            >
+                                <Settings size={16} />
+                            </button>
+                            <button
+                                onClick={() => { setShowHelpModal(true); setIsMobileMenuOpen(false); }}
+                                className="h-10 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300"
+                            >
+                                <CircleHelp size={16} />
+                            </button>
+                            <button
+                                onClick={() => { setShowAboutModal(true); setIsMobileMenuOpen(false); }}
+                                className="h-10 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300"
+                            >
+                                <Info size={16} />
+                            </button>
+                        </div>
+                        <div className="h-px bg-slate-100 dark:bg-dark-border" />
+                        <div className="grid grid-cols-3 gap-2">
+                            <button onClick={() => { undo(); setIsMobileMenuOpen(false); }} disabled={history.length === 0} className="h-10 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300 disabled:opacity-50">
+                                <Undo2 size={16} />
+                            </button>
+                            <button onClick={() => { redo(); setIsMobileMenuOpen(false); }} disabled={future.length === 0} className="h-10 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300 disabled:opacity-50">
+                                <Redo2 size={16} />
+                            </button>
+                            <button onClick={() => { handleResetProject(); setIsMobileMenuOpen(false); }} className="h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-500 dark:bg-red-900/20">
+                                <RotateCcw size={16} />
+                            </button>
+                        </div>
+                    </div>
+                )}
             </header>
 
             <div className="flex-1 flex overflow-hidden relative">
@@ -2238,44 +2298,6 @@ export default function App() {
                                                     onLinkToggle={toggleLink}
                                                     getSnappedPosition={getSnappedPosition}
                                                     onSelect={(id, multi) => {
-                                                        // Strict hit testing to avoid selecting when clicking bounding box corners
-                                                        const room = rooms.find(r => r.id === id);
-                                                        if (room) {
-                                                            const worldPos = toWorld(lastMousePos.current.x, lastMousePos.current.y);
-                                                            let isHit = false;
-                                                            
-                                                            if (room.polygon && room.polygon.length > 0) {
-                                                                const poly = room.polygon.map(pt => ({ x: room.x + pt.x, y: room.y + pt.y }));
-                                                                isHit = isPointInPolygon(worldPos, poly);
-                                                            } else if (room.shape === 'bubble') {
-                                                                // Ellipse check
-                                                                const centerX = room.x + room.width / 2;
-                                                                const centerY = room.y + room.height / 2;
-                                                                const rx = room.width / 2;
-                                                                const ry = room.height / 2;
-                                                                if (rx > 0 && ry > 0) {
-                                                                    const val = Math.pow(worldPos.x - centerX, 2) / Math.pow(rx, 2) + 
-                                                                                Math.pow(worldPos.y - centerY, 2) / Math.pow(ry, 2);
-                                                                    isHit = val <= 1;
-                                                                }
-                                                            } else {
-                                                                // Rect check (default)
-                                                                isHit = worldPos.x >= room.x && worldPos.x <= room.x + room.width &&
-                                                                        worldPos.y >= room.y && worldPos.y <= room.y + room.height;
-                                                            }
-
-                                                            if (!isHit) {
-                                                                // Clicked outside visual shape (but inside bounding box) -> Deselect
-                                                                if (!multi) {
-                                                                    setSelectedRoomIds(new Set());
-                                                                    setSelectedZone(null);
-                                                                    setSelectedAnnotationId(null);
-                                                                    if (connectionSourceId) setConnectionSourceId(null);
-                                                                }
-                                                                return;
-                                                            }
-                                                        }
-
                                                         if (connectionSourceId) {
                                                             toggleLink(id);
                                                             return;
@@ -2337,6 +2359,15 @@ export default function App() {
                                     {/* Tools Bar (Top Left) */}
                                     <div className="absolute top-6 left-6 flex flex-col gap-2 z-[200] export-exclude pointer-events-auto">
                                         <div className="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-sm p-1.5 rounded-full border border-slate-100 dark:border-dark-border shadow-lg flex items-center gap-1">
+                                            {/* Mobile Expand Button */}
+                                            <button
+                                                onClick={() => setIsToolbarExpanded(!isToolbarExpanded)}
+                                                className="lg:hidden w-8 h-8 rounded-full flex items-center justify-center text-slate-400 dark:text-gray-500 hover:bg-slate-50 dark:hover:bg-white/5"
+                                            >
+                                                {isToolbarExpanded ? <ChevronLeft size={16} /> : <MoreHorizontal size={16} />}
+                                            </button>
+
+                                            <div className={`flex items-center gap-1 ${!isToolbarExpanded ? 'hidden lg:flex' : 'flex'}`}>
                                             <div className="flex items-center bg-slate-100/50 dark:bg-white/5 rounded-full px-2 py-1 border border-slate-200/50 dark:border-dark-border gap-2 mr-1">
                                                 <span className="text-xs font-bold font-sans w-8 text-center">{gridSize}m</span>
                                                 <div className="flex flex-col -space-y-1">
@@ -2450,6 +2481,7 @@ export default function App() {
                                             >
                                                 <BrushCleaning size={16} />
                                             </button>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -2483,15 +2515,15 @@ export default function App() {
 
                                     <div className="absolute top-6 right-6 flex flex-col items-end gap-2 z-[200] export-exclude pointer-events-auto">
                                         <div className="h-12 bg-white/90 dark:bg-dark-surface/90 backdrop-blur-md px-4 rounded-full border border-slate-200 dark:border-dark-border shadow-xl flex items-center gap-4 animate-in slide-in-from-right-4 transition-all duration-300">
-                                            <div className="flex items-center gap-2 text-slate-400">
+                                            <div className="hidden lg:flex items-center gap-2 text-slate-400">
                                                 <div className="h-1 w-12 bg-slate-300/50 dark:bg-white/10 rounded-full relative">
                                                     <div className="absolute -top-3 left-0 text-[8px] font-bold">0m</div>
                                                     <div className="absolute -top-3 right-0 text-[8px] font-bold">{(16 / scale / PIXELS_PER_METER * 4).toFixed(1)}m</div>
                                                 </div>
                                             </div>
-                                            <div className="h-4 w-px bg-slate-200 dark:bg-dark-border" />
+                                            <div className="hidden lg:block h-4 w-px bg-slate-200 dark:bg-dark-border" />
                                             <div className="flex items-center gap-2">
-                                                <span className="text-xs font-sans font-black text-slate-700 dark:text-gray-300">{(scale * 100).toFixed(0)}%</span>
+                                                <span className="hidden lg:inline text-xs font-sans font-black text-slate-700 dark:text-gray-300">{(scale * 100).toFixed(0)}%</span>
                                                 <button onClick={handleZoomToFit} className="w-6 h-6 rounded-full bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center justify-center hover:bg-orange-500 hover:text-white transition-all shadow-sm" title="Zoom to Fit">
                                                     <Maximize size={12} />
                                                 </button>

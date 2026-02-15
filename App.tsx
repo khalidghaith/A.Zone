@@ -212,7 +212,7 @@ export default function App() {
         cornerRadius: 12,
         fontSize: 12,
         snapTolerance: 10,
-        snapToGrid: true,
+        snapToGrid: false,
         snapToObjects: true,
         snapWhileScaling: false
     });

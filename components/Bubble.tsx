@@ -113,15 +113,15 @@ const calculateCentroid = (points: Point[]): Point => {
     return { x: x / points.length, y: y / points.length };
 };
 
-const RenderCorner = ({ cursor, pos, zoomScale, onMouseDown }: { cursor: string, pos: React.CSSProperties, zoomScale: number, onMouseDown: (e: React.MouseEvent) => void }) => (
+const RenderCorner = ({ cursor, pos, zoomScale, onPointerDown }: { cursor: string, pos: React.CSSProperties, zoomScale: number, onPointerDown: (e: React.PointerEvent) => void }) => (
     <div
         className="absolute z-[70]"
-        style={{ ...pos, transform: `translate(-50%, -50%) scale(${1 / zoomScale})` }}
+        style={{ ...pos, transform: `translate(-50%, -50%) scale(${1 / zoomScale})`, touchAction: 'none' }}
     >
         <div
             className="w-3 h-3 bg-white border-2 border-orange-600 rounded-full hover:bg-orange-600 cursor-pointer shadow-lg active:scale-150"
             style={{ cursor }}
-            onMouseDown={onMouseDown}
+            onPointerDown={onPointerDown}
         />
     </div>
 );
@@ -227,14 +227,15 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedVertices, activePoints, room.id, updateRoom, room.shape, pixelsPerMeter]);
 
-    const handleRotateStart = (e: React.MouseEvent) => {
+    const handleRotateStart = (e: React.PointerEvent) => {
         e.stopPropagation();
+        e.preventDefault();
         onDragStart?.();
         setIsRotating(true);
         // We don't need to store start state for rotation if we calculate absolute angle from center
     };
 
-    const handleTextMouseDown = (e: React.MouseEvent) => {
+    const handleTextMouseDown = (e: React.PointerEvent) => {
         if (!room.isTextUnlocked) return;
         e.stopPropagation();
         onDragStart?.();
@@ -249,7 +250,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     };
 
     useEffect(() => {
-        const handleMouseMove = (e: MouseEvent) => {
+        const handlePointerMove = (e: PointerEvent) => {
             const dxScreen = e.clientX - startDragState.current.startX;
             const dyScreen = e.clientY - startDragState.current.startY;
             const dxWorld = dxScreen / zoomScale;
@@ -747,7 +748,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
             setSnapLines(currentSnapLines);
         };
 
-        const handleMouseUp = (e: MouseEvent) => {
+        const handlePointerUp = (e: PointerEvent) => {
             if (isDragging && onDragEnd) {
                 onDragEnd(room, e);
             }
@@ -774,17 +775,18 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         };
 
         if (isDragging || isRotating || resizeHandle || draggedVertex !== null || draggedEdge !== null || isTextDragging) {
-            window.addEventListener('mousemove', handleMouseMove);
-            window.addEventListener('mouseup', handleMouseUp);
+            window.addEventListener('pointermove', handlePointerMove);
+            window.addEventListener('pointerup', handlePointerUp);
         }
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
         };
     }, [isDragging, isRotating, resizeHandle, draggedVertex, draggedEdge, isExtruding, polygonSnapshot, isTextDragging, room.id, zoomScale, updateRoom, snapEnabled, snapPixelUnit, selectedVertices, appSettings.snapWhileScaling, getSnappedPosition, onDragEnd, onMove, isSelected, onSelect, otherRooms, appSettings.snapToObjects, appSettings.snapTolerance, appSettings.snapToGrid, room.x, room.y, room.shape, room.area, pixelsPerMeter]);
 
-    const handleResizeStart = (e: React.MouseEvent, handle: string) => {
+    const handleResizeStart = (e: React.PointerEvent, handle: string) => {
         e.stopPropagation();
+        e.preventDefault();
         onDragStart?.();
         setResizeHandle(handle);
         startDragState.current = {
@@ -794,8 +796,9 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         };
     };
 
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handleMouseDown = (e: React.PointerEvent) => {
         e.stopPropagation();
+        e.preventDefault();
         // Clear vertex selection if clicking on room body, UNLESS holding ctrl? 
         // Usually clicking body selects room, so handling vertices should be distinct.
         // User wants to move "them" (vertices).
@@ -820,8 +823,9 @@ const BubbleComponent: React.FC<BubbleProps> = ({
     };
 
     // Polygon Handling
-    const handleVertexDown = (e: React.MouseEvent, index: number) => {
+    const handleVertexDown = (e: React.PointerEvent, index: number) => {
         e.stopPropagation();
+        e.preventDefault();
         onDragStart?.();
         setDraggedVertex(index);
 
@@ -904,8 +908,9 @@ const BubbleComponent: React.FC<BubbleProps> = ({
         }
     };
 
-    const handleEdgeDown = (e: React.MouseEvent, index: number) => {
+    const handleEdgeDown = (e: React.PointerEvent, index: number) => {
         e.stopPropagation();
+        e.preventDefault();
         onDragStart?.();
 
         // Clear vertex selection when starting to drag an edge
@@ -1016,9 +1021,10 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 transform: `translate3d(${room.x}px, ${room.y}px, 0) rotate(${room.rotation || 0}deg)`,
                 width: (room.polygon || room.shape === 'bubble') ? 0 : room.width,
                 height: (room.polygon || room.shape === 'bubble') ? 0 : room.height,
-                cursor: isSketchMode ? 'default' : (isDragging ? 'grabbing' : 'pointer')
+                cursor: isSketchMode ? 'default' : (isDragging ? 'grabbing' : 'pointer'),
+                touchAction: 'none'
             }}
-            onMouseDown={isSketchMode || isOverlay ? undefined : handleMouseDown}
+            onPointerDown={isSketchMode || isOverlay ? undefined : handleMouseDown}
         >
             {/* Visual Surface */}
             <div className="relative group w-full h-full">
@@ -1067,7 +1073,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                                             className="cursor-move hover:stroke-orange-600/50 pointer-events-auto transition-colors duration-75"
                                             onMouseEnter={() => setHoveredEdge(i)}
                                             onMouseLeave={() => setHoveredEdge(null)}
-                                            onMouseDown={(e) => handleEdgeDown(e, i)}
+                                            onPointerDown={(e) => handleEdgeDown(e, i)}
                                         />
                                     );
                                 }
@@ -1081,7 +1087,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                                         className="cursor-move hover:stroke-orange-600/50 pointer-events-auto transition-colors duration-75"
                                         onMouseEnter={() => setHoveredEdge(i)}
                                         onMouseLeave={() => setHoveredEdge(null)}
-                                        onMouseDown={(e) => handleEdgeDown(e, i)}
+                                        onPointerDown={(e) => handleEdgeDown(e, i)}
                                     />
                                 );
                             })}
@@ -1101,7 +1107,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                                 onMouseEnter={() => setHoveredVertex(i)}
                                 onMouseLeave={() => setHoveredVertex(null)}
                                 onContextMenu={(e) => handleVertexContextMenu(e, i)}
-                                onMouseDown={(e) => handleVertexDown(e, i)}
+                                onPointerDown={(e) => handleVertexDown(e, i)}
                             />
                         ))}
                     </div>
@@ -1149,25 +1155,25 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                             cursor="nw-resize"
                             pos={{ top: '0%', left: '0%' }}
                             zoomScale={zoomScale}
-                            onMouseDown={(e) => handleResizeStart(e, 'nw')}
+                            onPointerDown={(e) => handleResizeStart(e, 'nw')}
                         />
                         <RenderCorner
                             cursor="ne-resize"
                             pos={{ top: '0%', left: '100%' }}
                             zoomScale={zoomScale}
-                            onMouseDown={(e) => handleResizeStart(e, 'ne')}
+                            onPointerDown={(e) => handleResizeStart(e, 'ne')}
                         />
                         <RenderCorner
                             cursor="sw-resize"
                             pos={{ top: '100%', left: '0%' }}
                             zoomScale={zoomScale}
-                            onMouseDown={(e) => handleResizeStart(e, 'sw')}
+                            onPointerDown={(e) => handleResizeStart(e, 'sw')}
                         />
                         <RenderCorner
                             cursor="se-resize"
                             pos={{ top: '100%', left: '100%' }}
                             zoomScale={zoomScale}
-                            onMouseDown={(e) => handleResizeStart(e, 'se')}
+                            onPointerDown={(e) => handleResizeStart(e, 'se')}
                         />
                     </>
                 )}
@@ -1182,7 +1188,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                         <div
                             className="absolute -top-[30px] left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-orange-600 rounded-full hover:bg-orange-600 shadow-lg active:scale-150"
                             style={{ cursor: ROTATE_CURSOR }}
-                            onMouseDown={handleRotateStart}
+                            onPointerDown={handleRotateStart}
                         />
                     </div>
                 )}
@@ -1223,7 +1229,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                         transform: `rotate(${- (room.rotation || 0)}deg)`,
                         transition: 'none'
                     }}
-                    onMouseDown={handleTextMouseDown}
+                    onPointerDown={handleTextMouseDown}
                 >
                     <div className="relative flex flex-col items-center w-full">
 

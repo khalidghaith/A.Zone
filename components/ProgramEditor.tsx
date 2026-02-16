@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Room, ZoneColor } from '../types';
 import {
     X, Search, Trash2, LayoutGrid,
-    ChevronDown, ChevronRight, Plus, Wand2, ArrowUpDown, ArrowUp, ArrowDown
+    ChevronDown, ChevronRight, ChevronLeft, Plus, Wand2, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { ApiKeyModal } from './ApiKeyModal';
 import { analyzeProgram } from '../services/geminiService';
@@ -67,6 +67,7 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [showApiKeySettings, setShowApiKeySettings] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(true);
 
     // Sorting & Grouping State
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'area' | 'zone'; direction: 'asc' | 'desc' }>({ key: 'zone', direction: 'asc' });
@@ -333,66 +334,80 @@ export const ProgramEditor: React.FC<ProgramEditorProps> = ({
             </div>
 
             {/* Right Sidebar - Analytics */}
-            <aside className="w-80 bg-white dark:bg-dark-surface border-l border-slate-200 dark:border-dark-border flex flex-col z-20 shadow-xl overflow-y-auto shrink-0">
-                <div className="p-6 space-y-8">
-                    <div>
-                        <h2 className="text-lg font-black text-slate-800 dark:text-gray-100 mb-1">Analytics</h2>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Project Statistics</p>
-                    </div>
-
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-dark-border">
-                            <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Gross (x1.3)</span>
-                            <span className="text-base font-black text-slate-700 dark:text-gray-200">{Number(((totalArea as number) * 1.3).toFixed(2))} m²</span>
-                        </div>
-                        <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-dark-border">
-                            <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Count</span>
-                            <span className="text-base font-black text-orange-600">{rooms.length}</span>
-                        </div>
-                    </div>
-
-                    {/* Net Area Circle */}
-                    <div className="flex flex-col items-center justify-center py-4">
-                        <div className="w-32 h-32 rounded-full border-[8px] border-slate-50 dark:border-white/5 flex flex-col items-center justify-center shadow-inner bg-white dark:bg-dark-surface relative">
-                            <div className="absolute inset-0 rounded-full border border-slate-200 dark:border-white/10" />
-                            <span className="text-2xl font-black text-slate-800 dark:text-gray-100 tracking-tight">{Number(totalArea.toFixed(2))}</span>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Net m²</span>
-                        </div>
-                    </div>
-
-                    {/* Zone Distribution */}
-                    <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Zone Distribution</h3>
-                            <button
-                                onClick={() => {
-                                    const name = prompt("Enter new zone name:");
-                                    if (name) onAddZone(name);
-                                }}
-                                className="px-3 py-2 rounded-lg text-[10px] font-black border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 flex items-center justify-center gap-1"
-                            >
-                                <Plus size={12} /> New
+            <aside className={`${isAnalyticsOpen ? 'w-80' : 'w-10'} bg-white dark:bg-dark-surface border-l border-slate-200 dark:border-dark-border flex flex-col z-20 shadow-xl overflow-y-auto shrink-0 transition-all duration-300`}>
+                {isAnalyticsOpen ? (
+                    <div className="p-6 space-y-8">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h2 className="text-lg font-black text-slate-800 dark:text-gray-100 mb-1">Analytics</h2>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Project Statistics</p>
+                            </div>
+                            <button onClick={() => setIsAnalyticsOpen(false)} className="text-slate-300 dark:text-gray-600 hover:text-slate-600 dark:hover:text-gray-400">
+                                <ChevronRight size={18} />
                             </button>
                         </div>
-                        <div className="space-y-4">
-                            {Object.entries(totalsByZone).map(([zone, area]) => (
-                                <div key={zone}>
-                                    <div className="flex justify-between text-sm font-bold text-slate-700 dark:text-gray-300 mb-1.5">
-                                        <span>{zone}</span>
-                                        <span>{Number((area as number).toFixed(2))} m²</span>
+
+                        {/* Stats Cards */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-dark-border">
+                                <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Gross (x1.3)</span>
+                                <span className="text-base font-black text-slate-700 dark:text-gray-200">{Number(((totalArea as number) * 1.3).toFixed(2))} m²</span>
+                            </div>
+                            <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-dark-border">
+                                <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Count</span>
+                                <span className="text-base font-black text-orange-600">{rooms.length}</span>
+                            </div>
+                        </div>
+
+                        {/* Net Area Circle */}
+                        <div className="flex flex-col items-center justify-center py-4">
+                            <div className="w-32 h-32 rounded-full border-[8px] border-slate-50 dark:border-white/5 flex flex-col items-center justify-center shadow-inner bg-white dark:bg-dark-surface relative">
+                                <div className="absolute inset-0 rounded-full border border-slate-200 dark:border-white/10" />
+                                <span className="text-2xl font-black text-slate-800 dark:text-gray-100 tracking-tight">{Number(totalArea.toFixed(2))}</span>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Net m²</span>
+                            </div>
+                        </div>
+
+                        {/* Zone Distribution */}
+                        <div>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Zone Distribution</h3>
+                                <button
+                                    onClick={() => {
+                                        const name = prompt("Enter new zone name:");
+                                        if (name) onAddZone(name);
+                                    }}
+                                    className="px-3 py-2 rounded-lg text-[10px] font-black border border-dashed border-slate-300 dark:border-white/20 text-slate-400 hover:text-orange-600 hover:border-orange-400 flex items-center justify-center gap-1"
+                                >
+                                    <Plus size={12} /> New
+                                </button>
+                            </div>
+                            <div className="space-y-4">
+                                {Object.entries(totalsByZone).map(([zone, area]) => (
+                                    <div key={zone}>
+                                        <div className="flex justify-between text-sm font-bold text-slate-700 dark:text-gray-300 mb-1.5">
+                                            <span>{zone}</span>
+                                            <span>{Number((area as number).toFixed(2))} m²</span>
+                                        </div>
+                                        <div className="h-1.5 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full ${zoneColors[zone]?.bg.replace('bg-', 'bg-') || 'bg-slate-400'} ${zoneColors[zone]?.border?.replace('border-', 'bg-')}`}
+                                                style={{ width: `${((area as number) / (totalArea as number)) * 100}%` }}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="h-1.5 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                                        <div
-                                            className={`h-full ${zoneColors[zone]?.bg.replace('bg-', 'bg-') || 'bg-slate-400'} ${zoneColors[zone]?.border?.replace('border-', 'bg-')}`}
-                                            style={{ width: `${((area as number) / (totalArea as number)) * 100}%` }}
-                                        />
-                                    </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
                     </div>
-                </div>
+                ) : (
+                    <div className="h-full flex flex-col items-center py-6 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => setIsAnalyticsOpen(true)}>
+                        <div className="flex-1 flex items-center justify-center">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-gray-500 whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Analytics</span>
+                        </div>
+                        <ChevronLeft size={18} className="text-slate-400 mb-4" />
+                    </div>
+                )}
             </aside>
 
             {/* AI Modal */}

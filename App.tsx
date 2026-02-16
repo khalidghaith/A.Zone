@@ -1809,9 +1809,7 @@ export default function App() {
 
             {/* Mobile Warning Overlay */}
             <div className="fixed inset-0 z-[9999] bg-slate-50 dark:bg-dark-bg flex flex-col items-center justify-center p-8 text-center md:hidden">
-                <div className="w-16 h-16 bg-orange-100 dark:bg-orange-900/20 rounded-3xl flex items-center justify-center mb-6 text-orange-600">
-                    <Maximize size={32} />
-                </div>
+                <img src={SoapLogo} className="w-16 h-16 mb-6" alt="SOAP" />
                 <h1 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Desktop Required</h1>
                 <p className="text-slate-500 dark:text-slate-400 font-medium max-w-xs mx-auto">
                     Sorry, This app requires a bigger screen to run.

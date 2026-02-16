@@ -1788,7 +1788,7 @@ export default function App() {
     }, [viewMode, darkMode, rooms, connections, currentFloor, scale, offset]);
 
     return (
-        <div className="h-screen w-screen flex flex-col bg-slate-50 dark:bg-dark-bg overflow-hidden font-sans selection:bg-orange-500/20 transition-colors duration-300">
+        <div className="h-screen w-screen bg-slate-50 dark:bg-dark-bg overflow-hidden font-sans selection:bg-orange-500/20 transition-colors duration-300">
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
                 :root, body, .font-sans { font-family: 'Inter', sans-serif; }
@@ -1806,6 +1806,19 @@ export default function App() {
                     body { background: white !important; }
                 }
             `}</style>
+
+            {/* Mobile Warning Overlay */}
+            <div className="fixed inset-0 z-[9999] bg-slate-50 dark:bg-dark-bg flex flex-col items-center justify-center p-8 text-center md:hidden">
+                <div className="w-16 h-16 bg-orange-100 dark:bg-orange-900/20 rounded-3xl flex items-center justify-center mb-6 text-orange-600">
+                    <Maximize size={32} />
+                </div>
+                <h1 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Desktop Required</h1>
+                <p className="text-slate-500 dark:text-slate-400 font-medium max-w-xs mx-auto">
+                    Sorry, This app requires a bigger screen to run.
+                </p>
+            </div>
+
+            <div className="hidden md:flex flex-col h-full w-full">
             {/* Premium Header */}
             <header className="h-[42px] bg-white/70 dark:bg-dark-surface/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-dark-border flex items-center justify-between pr-4 shrink-0 z-40 shadow-[0_1px_10px_rgba(0,0,0,0.02)] relative transition-colors duration-300">
                 <div className="flex items-center gap-4 h-full">
@@ -3123,6 +3136,7 @@ export default function App() {
                     />
                 )
             }
+            </div>
         </div >
     );
 }

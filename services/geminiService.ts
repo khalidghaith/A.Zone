@@ -15,6 +15,8 @@ export const analyzeProgram = async (programText: string, apiKey: string): Promi
       For each space, estimate a reasonable area in square meters if not explicitly stated (assume standard architectural sizing).
       Assign a logical "Zone" (e.g., Public, Private, Service, Outdoor, Admin, Circulation).
       
+      CRITICAL: Do not group circulation as a single, bulk area. Instead, identify and list individual corridors, hallways, and lobbies needed to logically connect all other spaces.
+      
       Program Description:
       ${programText}`,
       config: {
@@ -70,9 +72,10 @@ export const generateSpatialLayout = async (spaces: { id: string, name: string, 
       Architectural Logic: The AI must act as a Senior Architect. It should:
       1. Group "spaces" by Zone (e.g., keeping "Private" bedroom clusters away from "Public" living areas).
       2. Calculate a Proximity Matrix: Determine which rooms must be adjacent (e.g., Kitchen next to Dining).
-      3. Assign Coordinates & Floors: Generate x, y positions and assign a floor for each space in "spaces".
-      4. **Respect Fixed Spaces**: Do NOT move "fixedSpaces". Place "spaces" around or adjacent to "fixedSpaces" where logically appropriate. Ensure no overlaps with "fixedSpaces" on the same floor.
-      5. **Vertical Connections**: Consider vertical adjacency (e.g. stacking plumbing, connecting circulation). Distribute spaces across floors logically (e.g. Public/Service on lower floors, Private on upper floors, unless specified otherwise).
+      3. **Circulation as Connectors**: Do not clump all spaces directly adjacent to each other. Position spaces identified as Circulation (corridors, hallways, lobbies) between or extending alongside other spaces so they act as functional connectors. Leave logical realistic gaps for corridors between different zones.
+      4. Assign Coordinates & Floors: Generate x, y positions and assign a floor for each space in "spaces".
+      5. **Respect Fixed Spaces**: Do NOT move "fixedSpaces". Place "spaces" around or adjacent to "fixedSpaces" where logically appropriate. Ensure no overlaps with "fixedSpaces" on the same floor.
+      6. **Vertical Connections**: Consider vertical adjacency (e.g. stacking plumbing, connecting circulation). Distribute spaces across floors logically (e.g. Public/Service on lower floors, Private on upper floors, unless specified otherwise).
       
       Geometric Output: Use responseSchema to enforce a JSON output where each space in "spaces" includes { id: string, x: number, y: number, width: number, height: number, floor: number }.
       Note: Calculate width and height based on the space's area while maintaining a reasonable aspect ratio (between 1:1 and 1:2).

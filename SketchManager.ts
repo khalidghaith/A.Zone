@@ -43,12 +43,12 @@ export class SketchManager {
         if (points.length < 2) return '';
 
         // Check if the polyline is geometrically closed (start point == end point)
-        const isGeometricallyClosed = points.length > 2 && 
-            Math.abs(points[0].x - points[points.length - 1].x) < 0.1 && 
+        const isGeometricallyClosed = points.length > 2 &&
+            Math.abs(points[0].x - points[points.length - 1].x) < 0.1 &&
             Math.abs(points[0].y - points[points.length - 1].y) < 0.1;
 
         const isClosed = closed || isGeometricallyClosed;
-        
+
         let effectivePoints = [...points];
         // If it's closed and the last point duplicates the first, remove it for the loop
         if (isClosed && isGeometricallyClosed) {
@@ -57,8 +57,8 @@ export class SketchManager {
 
         if (isClosed) {
             if (effectivePoints.length < 3) {
-                return `M ${effectivePoints[0].x} ${effectivePoints[0].y} ` + 
-                       effectivePoints.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ') + ' Z';
+                return `M ${effectivePoints[0].x} ${effectivePoints[0].y} ` +
+                    effectivePoints.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ') + ' Z';
             }
 
             let d = '';
@@ -109,10 +109,10 @@ export class SketchManager {
         // Calculate offset for fillet
         const dot = v1.x * v2.x + v1.y * v2.y;
         const angle = Math.acos(Math.max(-1, Math.min(1, dot / (len1 * len2))));
-        
+
         let offset = 0;
         if (Math.abs(Math.tan(angle / 2)) > 0.001) {
-             offset = radius / Math.tan(angle / 2);
+            offset = radius / Math.tan(angle / 2);
         }
 
         const actualOffset = Math.min(offset, len1 / 2, len2 / 2);
@@ -126,7 +126,7 @@ export class SketchManager {
             x: p2.x + (v2.x / len2) * actualOffset,
             y: p2.y + (v2.y / len2) * actualOffset
         };
-        
+
         return { startPoint, endPoint };
     }
 
@@ -157,7 +157,7 @@ export class SketchManager {
             const lastOut = points[points.length - 1];
             const firstIn = points[1];
             const firstAnchor = points[0];
-            
+
             d += ` C ${lastOut.x} ${lastOut.y}, ${firstIn.x} ${firstIn.y}, ${firstAnchor.x} ${firstAnchor.y} Z`;
         }
         return d;
@@ -166,8 +166,12 @@ export class SketchManager {
     /**
      * Static helper to get markers for start/end caps.
      */
-    static getMarkerUrl(type: 'start' | 'end', cap?: string): string {
+    static getMarkerUrl(type: 'start' | 'end', cap?: string, color?: string): string {
         if (!cap || cap === 'none') return 'none';
+        if (color) {
+            const hex = color.replace('#', '');
+            return `url(#marker-${cap}-${type}-${hex})`;
+        }
         return `url(#marker-${cap}-${type})`;
     }
 }

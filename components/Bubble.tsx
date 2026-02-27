@@ -287,19 +287,23 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 const minSize = 20;
                 const areaPx = s.roomW * s.roomH;
 
-                // 1. Determine Anchor (Fixed opposite corner)
-                const anchorX = resizeHandle.includes('w') ? s.roomX + s.roomW : s.roomX;
-                const anchorY = resizeHandle.includes('n') ? s.roomY + s.roomH : s.roomY;
+                // 1. Localize drag movements via Inverse Rotation
+                const angleRadMap = - (room.rotation || 0) * (Math.PI / 180);
+                const localDx = dxWorld * Math.cos(angleRadMap) - dyWorld * Math.sin(angleRadMap);
+                const localDy = dxWorld * Math.sin(angleRadMap) + dyWorld * Math.cos(angleRadMap);
 
-                // 2. Calculate Raw Target Dimensions based on cursor
-                const startEdgeX = resizeHandle.includes('w') ? s.roomX : s.roomX + s.roomW;
-                const startEdgeY = resizeHandle.includes('n') ? s.roomY : s.roomY + s.roomH;
+                const anchorLocalX = resizeHandle.includes('w') ? s.roomX + s.roomW : s.roomX;
+                const anchorLocalY = resizeHandle.includes('n') ? s.roomY + s.roomH : s.roomY;
 
-                const currentEdgeX = startEdgeX + dxWorld;
-                const currentEdgeY = startEdgeY + dyWorld;
+                // 2. Calculate Raw Target Dimensions based on cursor (in local unrotated coordinates)
+                const startEdgeLocalX = resizeHandle.includes('w') ? s.roomX : s.roomX + s.roomW;
+                const startEdgeLocalY = resizeHandle.includes('n') ? s.roomY : s.roomY + s.roomH;
 
-                let rawW = Math.abs(currentEdgeX - anchorX);
-                let rawH = Math.abs(currentEdgeY - anchorY);
+                const currentEdgeLocalX = startEdgeLocalX + localDx;
+                const currentEdgeLocalY = startEdgeLocalY + localDy;
+
+                let rawW = Math.abs(currentEdgeLocalX - anchorLocalX);
+                let rawH = Math.abs(currentEdgeLocalY - anchorLocalY);
 
                 rawW = Math.max(minSize, rawW);
                 rawH = Math.max(minSize, rawH);
@@ -309,16 +313,16 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 let tW = Math.sqrt(areaPx * ratio);
                 let tH = areaPx / tW;
 
-                // 4. Identify Moving Edges candidates (Theoretical)
-                const movingEdgeX = resizeHandle.includes('w') ? anchorX - tW : anchorX + tW;
-                const movingEdgeY = resizeHandle.includes('n') ? anchorY - tH : anchorY + tH;
+                // 4. Identify Moving Edges candidates (Theoretical in unrotated world space for snapping)
+                const movingEdgeX = resizeHandle.includes('w') ? anchorLocalX - tW : anchorLocalX + tW;
+                const movingEdgeY = resizeHandle.includes('n') ? anchorLocalY - tH : anchorLocalY + tH;
 
-                // 5. Check Snaps
+                // 5. Check Snaps (Only when NOT rotated)
                 let bestSnapDist = appSettings.snapTolerance / zoomScale;
                 let snappedAxis: 'x' | 'y' | null = null;
                 let snapValue = 0;
 
-                if (shouldSnap && appSettings.snapWhileScaling) {
+                if (shouldSnap && appSettings.snapWhileScaling && !(room.rotation)) {
                     const { x: targetsX, y: targetsY } = getSnapTargets();
 
                     // Check X Snaps
@@ -366,20 +370,50 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                 // 6. Apply Snap
                 if (snappedAxis === 'x') {
-                    tW = Math.max(minSize, Math.abs(snapValue - anchorX));
+                    tW = Math.max(minSize, Math.abs(snapValue - anchorLocalX));
                     tH = areaPx / tW;
                     currentSnapLines = [{ x: resizeHandle.includes('w') ? 0 : tW }];
                 } else if (snappedAxis === 'y') {
-                    tH = Math.max(minSize, Math.abs(snapValue - anchorY));
+                    tH = Math.max(minSize, Math.abs(snapValue - anchorLocalY));
                     tW = areaPx / tH;
                     currentSnapLines = [{ y: resizeHandle.includes('n') ? 0 : tH }];
                 }
 
-                // 7. Finalize
+                // 7. Finalize Area Preserved Size
                 const finalW = tW;
                 const finalH = tH;
-                const finalX = resizeHandle.includes('w') ? anchorX - finalW : anchorX;
-                const finalY = resizeHandle.includes('n') ? anchorY - finalH : anchorY;
+
+                // 8. Compensate for rotation so the opposite anchor corner remains stationary
+                const angleRadPos = (room.rotation || 0) * (Math.PI / 180);
+                const cosA = Math.cos(angleRadPos);
+                const sinA = Math.sin(angleRadPos);
+
+                const ancOldLocalX = resizeHandle.includes('w') ? s.roomW : 0;
+                const ancOldLocalY = resizeHandle.includes('n') ? s.roomH : 0;
+
+                const cxOld = s.roomX + s.roomW / 2;
+                const cyOld = s.roomY + s.roomH / 2;
+
+                const vxOld = ancOldLocalX - s.roomW / 2;
+                const vyOld = ancOldLocalY - s.roomH / 2;
+
+                // World position of the opposite anchor corner
+                const wAncX = cxOld + (cosA * vxOld - sinA * vyOld);
+                const wAncY = cyOld + (sinA * vxOld + cosA * vyOld);
+
+                const ancNewLocalX = resizeHandle.includes('w') ? finalW : 0;
+                const ancNewLocalY = resizeHandle.includes('n') ? finalH : 0;
+
+                const vxNew = ancNewLocalX - finalW / 2;
+                const vyNew = ancNewLocalY - finalH / 2;
+
+                // New rotated offset for the anchor corner
+                const rNewX = cosA * vxNew - sinA * vyNew;
+                const rNewY = sinA * vxNew + cosA * vyNew;
+
+                // Compute exact top-left
+                const finalX = wAncX - finalW / 2 - rNewX;
+                const finalY = wAncY - finalH / 2 - rNewY;
 
                 updateRoom(room.id, { width: finalW, height: finalH, x: finalX, y: finalY });
 
@@ -404,12 +438,16 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                 }
             } else if (draggedVertex !== null && polygonSnapshot && room.shape === 'bubble') {
                 // --- BUBBLE PHYSICS: AREA PRESERVATION ---
+                const angleRad = - (room.rotation || 0) * (Math.PI / 180);
+                const localDx = dxWorld * Math.cos(angleRad) - dyWorld * Math.sin(angleRad);
+                const localDy = dxWorld * Math.sin(angleRad) + dyWorld * Math.cos(angleRad);
+
                 const newPoints = [...polygonSnapshot];
                 const v = newPoints[draggedVertex];
 
                 // 1. Move the dragged vertex to mouse position
-                const targetX = v.x + dxWorld;
-                const targetY = v.y + dyWorld;
+                const targetX = v.x + localDx;
+                const targetY = v.y + localDy;
                 newPoints[draggedVertex] = { x: targetX, y: targetY };
 
                 // 2. Calculate current area and centroid
@@ -451,14 +489,18 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     ? Array.from(selectedVertices)
                     : [draggedVertex];
 
+                const angleRad = - (room.rotation || 0) * (Math.PI / 180);
+                const localDx = dxWorld * Math.cos(angleRad) - dyWorld * Math.sin(angleRad);
+                const localDy = dxWorld * Math.sin(angleRad) + dyWorld * Math.cos(angleRad);
+
                 indicesToMove.forEach(index => {
                     // Safe check
                     if (index >= newPoints.length) return;
 
-                    const v = newPoints[index];
+                    const original = polygonSnapshot[index];
 
-                    const rawX = v.x + dxWorld;
-                    const rawY = v.y + dyWorld;
+                    const rawX = original.x + localDx;
+                    const rawY = original.y + localDy;
 
                     // Default to grid snap or raw
                     let nx = rawX;
@@ -471,7 +513,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                     if (shouldSnap && appSettings.snapToObjects) {
                         const tolerance = appSettings.snapTolerance / zoomScale;
-                        
+
                         let bestDX = tolerance;
                         let bestX = null;
                         let snapLineX = null;
@@ -561,13 +603,17 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
             } else if (draggedEdge !== null && polygonSnapshot) {
                 // Moving Edge
+                const angleRad = - (room.rotation || 0) * (Math.PI / 180);
+                const localDx = dxWorld * Math.cos(angleRad) - dyWorld * Math.sin(angleRad);
+                const localDy = dxWorld * Math.sin(angleRad) + dyWorld * Math.cos(angleRad);
+
                 const newPoints = [...polygonSnapshot];
                 const idx1 = draggedEdge;
                 const idx2 = (draggedEdge + 1) % polygonSnapshot.length;
 
                 const moveAndSnap = (v: Point) => {
-                    const rawX = v.x + dxWorld;
-                    const rawY = v.y + dyWorld;
+                    const rawX = v.x + localDx;
+                    const rawY = v.y + localDy;
                     let nx = rawX;
                     let ny = rawY;
 
@@ -578,7 +624,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
                     if (shouldSnap && appSettings.snapToObjects) {
                         const tolerance = appSettings.snapTolerance / zoomScale;
-                        
+
                         let bestDX = tolerance;
                         let bestX = null;
                         let snapLineX = null;
@@ -686,7 +732,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                     if (appSettings.snapToObjects) {
                         const tolerance = appSettings.snapTolerance / zoomScale;
                         const { x: targetsX, y: targetsY } = getSnapTargets();
-                        
+
                         let bestDX = tolerance;
                         let bestX = null;
                         let snapLineX = null;
@@ -706,7 +752,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                                 snapLineX = room.width;
                             }
                         }
-                        
+
                         if (bestX !== null) {
                             nX = bestX;
                             currentSnapLines.push({ x: snapLineX });
@@ -925,9 +971,9 @@ const BubbleComponent: React.FC<BubbleProps> = ({
 
         // Manual Double Click Detection (PointerEvent.detail can be unreliable with preventDefault on some devices)
         const now = Date.now();
-        const isDouble = lastEdgeClick.current && 
-                         (now - lastEdgeClick.current.time < 300) && 
-                         lastEdgeClick.current.index === index;
+        const isDouble = lastEdgeClick.current &&
+            (now - lastEdgeClick.current.time < 300) &&
+            lastEdgeClick.current.index === index;
         lastEdgeClick.current = { time: now, index };
 
         // Clear vertex selection when starting to drag an edge
@@ -1067,7 +1113,7 @@ const BubbleComponent: React.FC<BubbleProps> = ({
                             {/* Polygon Edges (Hit Areas for Editing) */}
                             {isSelected && activePoints.map((p, i) => {
                                 const next = activePoints[(i + 1) % activePoints.length];
-                                
+
                                 if (room.shape === 'bubble') {
                                     const p0 = activePoints[(i - 1 + activePoints.length) % activePoints.length];
                                     const p1 = p;

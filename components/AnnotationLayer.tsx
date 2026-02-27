@@ -91,7 +91,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         const distD2 = Math.abs(dx + dy) / Math.sqrt(2); // y = -x + c
 
         const min = Math.min(distH, distV, distD1, distD2);
-        
+
         let snapped = { ...current };
         const lines = [];
         const L = 100000; // Guide length
@@ -111,7 +111,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             snapped = { x: base.x + avg, y: base.y - avg };
             lines.push({ x1: base.x - L, y1: base.y + L, x2: base.x + L, y2: base.y - L });
         }
-        
+
         setSnapLines(lines);
         return snapped;
     };
@@ -141,7 +141,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [activeType, points, currentFloor, properties, onAddAnnotation, editingTextId, isSketchMode]);
 
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handleMouseDown = (e: React.PointerEvent) => {
         if (!isSketchMode) return;
 
         // Eraser logic is handled by onClick on individual annotations.
@@ -338,7 +338,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         }
     };
 
-    const handleMouseMove = (e: React.MouseEvent) => {
+    const handleMouseMove = (e: React.PointerEvent) => {
         if (!isSketchMode) return;
         let point = toWorld(e.clientX, e.clientY);
 
@@ -476,7 +476,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         }
     };
 
-    const handleMouseUp = (e: React.MouseEvent) => {
+    const handleMouseUp = (e: React.PointerEvent) => {
         if (!isSketchMode) return;
         let point = toWorld(e.clientX, e.clientY);
 
@@ -673,38 +673,46 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         <div
             ref={containerRef}
             className={`w-full h-full ${isSketchMode ? 'pointer-events-auto' : 'pointer-events-none'}`}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
+            onPointerDown={handleMouseDown}
+            onPointerMove={handleMouseMove}
+            onPointerUp={handleMouseUp}
+            onPointerCancel={handleMouseUp}
             onDoubleClick={handleDoubleClick}
             onContextMenu={handleContextMenu}
         >
             <svg className="w-full h-full overflow-visible">
                 <defs>
-                    <marker id="marker-arrow-start" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
-                        <path d="M 11 1 L 6 6 L 11 11 z" fill="context-stroke" stroke="context-stroke" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-                    </marker>
-                    <marker id="marker-arrow-end" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
-                        <path d="M 1 1 L 6 6 L 1 11 z" fill="context-stroke" stroke="context-stroke" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-                    </marker>
-                    <marker id="marker-open-arrow-start" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
-                        <path d="M 11 1 L 6 6 L 11 11" fill="none" stroke="context-stroke" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-                    </marker>
-                    <marker id="marker-open-arrow-end" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
-                        <path d="M 1 1 L 6 6 L 1 11" fill="none" stroke="context-stroke" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-                    </marker>
-                    <marker id="marker-circle-start" markerWidth="8" markerHeight="8" refX="4" refY="4">
-                        <circle cx="4" cy="4" r="3" fill="context-stroke" />
-                    </marker>
-                    <marker id="marker-circle-end" markerWidth="8" markerHeight="8" refX="4" refY="4">
-                        <circle cx="4" cy="4" r="3" fill="context-stroke" />
-                    </marker>
-                    <marker id="marker-square-start" markerWidth="8" markerHeight="8" refX="4" refY="4">
-                        <rect x="1" y="1" width="6" height="6" fill="context-stroke" />
-                    </marker>
-                    <marker id="marker-square-end" markerWidth="8" markerHeight="8" refX="4" refY="4">
-                        <rect x="1" y="1" width="6" height="6" fill="context-stroke" />
-                    </marker>
+                    {Array.from(new Set([...annotations.map(a => a.style.stroke), properties.stroke].filter(Boolean))).map(color => {
+                        const idSuffix = color!.replace('#', '');
+                        return (
+                            <React.Fragment key={color}>
+                                <marker id={`marker-arrow-start-${idSuffix}`} markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
+                                    <path d="M 11 1 L 6 6 L 11 11 z" fill={color} stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+                                </marker>
+                                <marker id={`marker-arrow-end-${idSuffix}`} markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
+                                    <path d="M 1 1 L 6 6 L 1 11 z" fill={color} stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+                                </marker>
+                                <marker id={`marker-open-arrow-start-${idSuffix}`} markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
+                                    <path d="M 11 1 L 6 6 L 11 11" fill="none" stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+                                </marker>
+                                <marker id={`marker-open-arrow-end-${idSuffix}`} markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
+                                    <path d="M 1 1 L 6 6 L 1 11" fill="none" stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+                                </marker>
+                                <marker id={`marker-circle-start-${idSuffix}`} markerWidth="8" markerHeight="8" refX="4" refY="4">
+                                    <circle cx="4" cy="4" r="3" fill={color} />
+                                </marker>
+                                <marker id={`marker-circle-end-${idSuffix}`} markerWidth="8" markerHeight="8" refX="4" refY="4">
+                                    <circle cx="4" cy="4" r="3" fill={color} />
+                                </marker>
+                                <marker id={`marker-square-start-${idSuffix}`} markerWidth="8" markerHeight="8" refX="4" refY="4">
+                                    <rect x="1" y="1" width="6" height="6" fill={color} />
+                                </marker>
+                                <marker id={`marker-square-end-${idSuffix}`} markerWidth="8" markerHeight="8" refX="4" refY="4">
+                                    <rect x="1" y="1" width="6" height="6" fill={color} />
+                                </marker>
+                            </React.Fragment>
+                        );
+                    })}
                 </defs>
 
                 <g transform={`translate(${offset.x}, ${offset.y}) scale(${scale})`}>
@@ -737,7 +745,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                 pointerEvents: 'all' as const,
                                 cursor: isDragging ? 'grabbing' : 'pointer'
                             },
-                            onMouseDown: (e: React.MouseEvent) => {
+                            onPointerDown: (e: React.PointerEvent) => {
                                 e.stopPropagation(); // Prevent canvas deselect
                                 onInteractionStart?.();
                                 isDraggingAnnotation.current = true;
@@ -788,8 +796,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                         }
 
                         const pathD = SketchManager.generatePath(ann);
-                        const markerStart = SketchManager.getMarkerUrl('start', ann.style.startCap);
-                        const markerEnd = SketchManager.getMarkerUrl('end', ann.style.endCap);
+                        const markerStart = SketchManager.getMarkerUrl('start', ann.style.startCap, ann.style.stroke);
+                        const markerEnd = SketchManager.getMarkerUrl('end', ann.style.endCap, ann.style.stroke);
 
                         if (isEraser || isSelect) {
                             return (
@@ -957,8 +965,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                                 strokeLinecap={properties.startCap === 'round' ? 'round' : 'butt'}
                                 strokeLinejoin="round"
                                 opacity={0.6}
-                                markerStart={SketchManager.getMarkerUrl('start', properties.startCap)}
-                                markerEnd={SketchManager.getMarkerUrl('end', properties.endCap)}
+                                markerStart={SketchManager.getMarkerUrl('start', properties.startCap, properties.stroke)}
+                                markerEnd={SketchManager.getMarkerUrl('end', properties.endCap, properties.stroke)}
                             />
 
                             {/* Visual Guides for Bezier Handles (Pen Tool) */}
